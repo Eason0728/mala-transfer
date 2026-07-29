@@ -25,8 +25,8 @@ body{margin:0;background:var(--bg);color:var(--ink);padding:28px 20px 80px;
 header{display:flex;align-items:center;gap:14px;margin-bottom:20px;flex-wrap:wrap;
        background:var(--head);border:1px solid var(--line);border-radius:14px;padding:14px 18px}
 .logos{display:flex;align-items:center;gap:9px}
-.logos img{height:34px;width:34px;object-fit:contain;display:block;
-           background:#fff;border-radius:8px;padding:3px;border:1px solid rgba(30,45,65,.07)}
+/* 不加白底、不留 padding、不畫框（Eason 2026-07-29：外框不要有白邊）；cover 裁滿避免 contain 露底色縫 */
+.logos img{height:34px;width:34px;object-fit:cover;display:block;border-radius:8px}
 h1{font-size:19px;margin:0;letter-spacing:.03em}
 h1 b{color:var(--dim);font-weight:400;margin:0 -1px}
 header p{margin:0;color:var(--dim);font-size:13px}
