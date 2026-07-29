@@ -1,0 +1,504 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>鼎兆元調撥系統 — 會計專區</title>
+<style>
+:root{
+  color-scheme:light;
+  --bg:#f3f5f8; --panel:#fff; --head:#e9edf3; --line:#e2e8f0; --ink:#28323e; --dim:#7c8b9d;
+  --accent:#3a72b5; --accent-soft:rgba(58,114,181,.10); --brand:#d2542f;
+  --done:#4a9e78; --danger:#c9615f; --shadow:0 1px 2px rgba(30,45,65,.04),0 5px 16px rgba(30,45,65,.045);
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);padding:28px 20px 80px;
+     font:15px/1.65 -apple-system,BlinkMacSystemFont,"PingFang TC","Noto Sans TC","Segoe UI",sans-serif}
+.wrap{max-width:1080px;margin:0 auto}
+/* 標題區給一層底色：一悟的 logo 是白底，放在純白／太淺的底上會整塊消失 */
+header{display:flex;align-items:center;gap:14px;margin-bottom:20px;flex-wrap:wrap;
+       background:var(--head);border:1px solid var(--line);border-radius:14px;padding:14px 18px}
+.logos{display:flex;align-items:center;gap:9px}
+.logos img{height:34px;width:34px;object-fit:contain;display:block;
+           background:#fff;border-radius:8px;padding:3px;border:1px solid rgba(30,45,65,.07)}
+h1{font-size:19px;margin:0;letter-spacing:.03em}
+h1 b{color:var(--dim);font-weight:400;margin:0 -1px}
+header p{margin:0;color:var(--dim);font-size:13px}
+.back{margin-left:auto;font-size:13px;font-weight:600;color:var(--accent);text-decoration:none;
+      border:1px solid var(--line);border-radius:999px;padding:6px 14px;background:var(--panel)}
+.back:hover{background:var(--accent-soft)}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:20px;margin-bottom:18px;box-shadow:var(--shadow)}
+h2{font-size:13px;font-weight:700;color:var(--dim);letter-spacing:.08em;margin:0 0 16px}
+h3{font-size:14px;margin:22px 0 10px}
+label{display:block;font-size:12px;color:var(--dim);margin-bottom:5px}
+input,select{width:100%;font:inherit;font-size:15px;color:var(--ink);background:var(--bg);
+  border:1px solid var(--line);border-radius:9px;padding:9px 11px}
+input:focus,select:focus{outline:none;border-color:var(--accent)}
+.row{display:flex;gap:12px;align-items:end;flex-wrap:wrap}
+.row>div{flex:1;min-width:150px}
+button{font:inherit;cursor:pointer;border:0;border-radius:9px;padding:10px 18px;
+       background:var(--accent);color:#fff;font-weight:600;white-space:nowrap}
+button.line{background:transparent;border:1px solid var(--line);color:var(--ink);font-weight:500}
+button.sm{padding:5px 11px;font-size:13px;font-weight:500}
+button:disabled{opacity:.45;cursor:default}
+.msg{border-radius:10px;padding:11px 14px;font-size:14px;margin:14px 0 0;display:none}
+.msg.ok{display:block;background:rgba(46,168,106,.12);border:1px solid var(--done);color:var(--done)}
+.msg.err{display:block;background:rgba(214,69,69,.12);border:1px solid var(--danger);color:var(--danger)}
+.scroll{overflow-x:auto;margin-top:12px;border:1px solid var(--line);border-radius:10px}
+table{width:100%;border-collapse:collapse;font-size:13px;white-space:nowrap}
+th,td{padding:8px 11px;text-align:left;border-bottom:1px solid var(--line)}
+th{background:var(--bg);color:var(--dim);font-weight:600;font-size:12px;position:sticky;top:0}
+tr:last-child td{border-bottom:0}
+td.n,th.n{text-align:right;font-variant-numeric:tabular-nums}
+tr.total td{font-weight:700;background:var(--accent-soft)}
+.gap{color:var(--danger);font-weight:600}
+/* 調撥矩陣 */
+.mtx th.rowh{text-align:left;background:var(--bg);position:sticky;left:0;z-index:1;font-weight:600;color:var(--ink)}
+.mtx td.mx b{display:block;font-weight:700}
+.mtx td.mx i{display:block;font-style:normal;font-size:11px;color:var(--dim);margin-top:1px}
+.mtx td.mx{background:var(--accent-soft)}
+.mtx td.mx0{color:var(--line)}
+a.flow{color:var(--accent);text-decoration:underline;cursor:pointer;font-weight:600}
+.note{font-size:12px;color:var(--dim);margin-top:10px;line-height:1.65}
+.hide{display:none}
+.tag{display:inline-block;font-size:11px;border-radius:999px;padding:1px 8px;background:var(--bg);
+     border:1px solid var(--line);color:var(--dim);margin-left:6px}
+.off{opacity:.5}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div class="logos">
+      <img src="data:image/png;base64,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" alt="墨竹亭">
+      <img src="data:image/jpeg;base64,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" alt="麻的小辛辣">
+      <img src="data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAASABIAAD/4QBMRXhpZgAATU0AKgAAAAgAAYdpAAQAAAABAAAAGgAAAAAAA6ABAAMAAAABAAEAAKACAAQAAAABAAAAYKADAAQAAAABAAAAYAAAAAD/4QnSaHR0cDovL25zLmFkb2JlLmNvbS94YXAvMS4wLwA8P3hwYWNrZXQgYmVnaW49Iu+7vyIgaWQ9Ilc1TTBNcENlaGlIenJlU3pOVGN6a2M5ZCI/PiA8eDp4bXBtZXRhIHhtbG5zOng9ImFkb2JlOm5zOm1ldGEvIiB4OnhtcHRrPSJYTVAgQ29yZSA2LjAuMCI+IDxyZGY6UkRGIHhtbG5zOnJkZj0iaHR0cDovL3d3dy53My5vcmcvMTk5OS8wMi8yMi1yZGYtc3ludGF4LW5zIyI+IDxyZGY6RGVzY3JpcHRpb24gcmRmOmFib3V0PSIiIHhtbG5zOnBob3Rvc2hvcD0iaHR0cDovL25zLmFkb2JlLmNvbS9waG90b3Nob3AvMS4wLyIgcGhvdG9zaG9wOkluc3RydWN0aW9ucz0iRkJNRDBhMDAwYTFmMDIwMDAwZDgxOTAwMDA4ZDJjMDAwMDVmMmUwMDAwNDgyZjAwMDBiNzU2MDAwMGEyODgwMDAwM2Q5NjAwMDBkMTk3MDAwMGFkOTgwMDAwMTFjNzAwMDAiLz4gPC9yZGY6UkRGPiA8L3g6eG1wbWV0YT4gICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICA8P3hwYWNrZXQgZW5kPSJ3Ij8+AP/tAK5QaG90b3Nob3AgMy4wADhCSU0EBAAAAAAAdhwBWgADGyVHHAIAAAIAAhwCKABiRkJNRDBhMDAwYTFmMDIwMDAwZDgxOTAwMDA4ZDJjMDAwMDVm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" alt="一悟燒肉">
+    </div>
+    <h1>鼎兆元<b>｜</b>調撥系統</h1>
+    <p>會計專區</p>
+    <a class="back" href="index.html">回門市開單頁 ›</a>
+  </header>
+
+  <!-- 密碼 -->
+  <div class="card" id="gate">
+    <h2>會計專區密碼</h2>
+    <div class="row">
+      <div><label>密碼</label><input id="pin" type="password" placeholder="請輸入密碼" autocomplete="current-password"></div>
+      <div style="flex:0"><button id="unlock">進入</button></div>
+    </div>
+    <div class="msg" id="gmsg"></div>
+    <p class="note">如忘記密碼，請洽詢 EASON。</p>
+  </div>
+
+  <!-- 月報 -->
+  <div class="card hide" id="rptCard">
+    <h2>月報（給會計對帳）</h2>
+    <div class="row">
+      <div><label>年月</label><input id="ym" type="month"></div>
+      <div><label>門市（可不選＝全部）</label><select id="node"></select></div>
+      <div style="flex:0"><button id="gen">產生月報</button></div>
+    </div>
+    <div class="msg" id="rmsg"></div>
+    <div id="rpt"></div>
+  </div>
+
+  <!-- 管理 -->
+  <div class="card hide" id="admCard">
+    <h2>資料整理</h2>
+
+    <h3>差異原因清單</h3>
+    <div class="scroll"><table id="rtab"></table></div>
+    <p class="note">停用的原因不會再出現在簽收選單，但舊單照樣顯示原本的名字。合併會把舊單的代碼一起改過去，所以歷史資料不會斷。固定的五項不能停用。</p>
+
+    <h3>品項記憶</h3>
+    <div class="row" style="margin-bottom:4px">
+      <div style="max-width:220px"><label>只看某個品牌</label><select id="mbrand"><option value="">全部</option></select></div>
+    </div>
+    <div class="scroll"><table id="mtab"></table></div>
+    <p class="note">刪掉之後只是不再自動帶出來，已經開過的單不受影響。</p>
+    <div class="msg" id="amsg"></div>
+  </div>
+</div>
+
+<script>
+'use strict';
+const API = 'https://script.google.com/macros/s/AKfycbxRqci1Cnu92TKoAfYIpDxDfxjGF3_ENrjQL1yurnkxOwZz9MyM9Eu9grIcdeKjbs8-/exec';
+let PIN = '', NODES = [], RPT = null;
+
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s == null ? '' : s).replace(/[&<>"]/g, (c) =>
+  ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+const n2 = (v) => v === '' || v === null || v === undefined ? '' : Number(v).toLocaleString('zh-TW');
+
+async function post(action, payload) {
+  const body = JSON.stringify({ action, payload });
+  if (window.__LOCAL_BACKEND__) return JSON.parse(window.__LOCAL_BACKEND__(body));
+  const r = await fetch(API, {
+    method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: body
+  });
+  return r.json();
+}
+function show(el, kind, text) { el.className = 'msg ' + kind; el.textContent = text; }
+
+// ── 進入 ──────────────────────────────────────────────
+$('unlock').onclick = async () => {
+  const pin = $('pin').value.trim();
+  const res = await post('adminData', { pin_master: pin });
+  if (!res.ok) return show($('gmsg'), 'err', res.error);
+  PIN = pin;
+  $('gate').classList.add('hide');
+  $('rptCard').classList.remove('hide');
+  $('admCard').classList.remove('hide');
+  paintAdmin(res.data);
+};
+$('pin').addEventListener('keydown', (e) => { if (e.key === 'Enter') $('unlock').click(); });
+
+// ── 月報 ──────────────────────────────────────────────
+$('gen').onclick = async () => {
+  const ym = $('ym').value;
+  if (!ym) return show($('rmsg'), 'err', '請先選年月');
+  show($('rmsg'), '', '');
+  const res = await post('buildMonthlyReport', { ym: ym, node: $('node').value, pin_master: PIN });
+  if (!res.ok) return show($('rmsg'), 'err', res.error);
+  RPT = res.data;
+  paintReport();
+  show($('rmsg'), 'ok', `已產生 ${res.data.sheets.join('、')}（同一個月重跑會覆蓋，不會愈長愈多張）`);
+};
+
+/** 靠欄位名判斷哪幾欄是數字，不要靠欄位位置——欄位一改順序就會把「有無差異」算成 NaN */
+const isNum = (h) => /單數|總額|淨額|品項數/.test(h);
+
+function tableHtml(headers, rows, totalLast, nodes) {
+  const th = headers.map((h) => `<th class="${isNum(h) ? 'n' : ''}">${esc(h)}</th>`).join('');
+  const tr = rows.map((r, ri) => {
+    const isTotal = totalLast && ri === rows.length - 1;
+    const node = nodes ? nodes[ri] : null;
+    const tds = r.map((v, i) => {
+      const num = isNum(headers[i]);
+      const bad = num && headers[i].indexOf('差異') >= 0 && Number(v);
+      // 只有調出總額做成連結，點了看這店調給了哪幾家、各多少錢（單數不做，同一列兩個連結太吵）
+      const linkable = node && Number(v) && headers[i] === '調出總額';
+      const body = num ? n2(v) : esc(v);
+      const cell = linkable ? `<a class="flow" data-node="${esc(node)}">${body}</a>` : body;
+      return `<td class="${num ? 'n' : ''}${bad ? ' gap' : ''}">${cell}</td>`;
+    }).join('');
+    return `<tr class="${isTotal ? 'total' : ''}">${tds}</tr>`;
+  }).join('');
+  return `<thead><tr>${th}</tr></thead><tbody>${tr}</tbody>`;
+}
+
+/**
+ * 調撥矩陣：列＝調出門市，欄＝調入門市，格子＝金額（小字是張數）
+ * 這是「一眼看完這個月誰調給誰、多少錢」最省事的形式——沒有往來的格子留白，
+ * 有往來的自然凸出來，會計不用逐店點開看。
+ */
+function matrixHtml() {
+  const nodes = RPT.summary.nodes || [];
+  const flows = RPT.flows || {};
+  const label = (n) => {
+    const i = nodes.indexOf(n);
+    return i >= 0 ? RPT.summary.rows[i][0] + ' ' + RPT.summary.rows[i][1] : n;
+  };
+  const srcs = nodes.filter((n) => (flows[n] || []).length);
+  if (!srcs.length) return '<h3>調撥矩陣</h3><p class="note">這個月沒有調撥紀錄。</p>';
+
+  // 只列出真的有收到貨的門市，欄位才不會一整片空的
+  const dstSet = new Set();
+  srcs.forEach((s) => flows[s].forEach((d) => dstSet.add(d.node)));
+  const dsts = nodes.filter((n) => dstSet.has(n));
+  const shortOf = (n) => {
+    for (const s of srcs) { const hit = flows[s].find((d) => d.node === n); if (hit) return hit.short; }
+    return n;
+  };
+
+  const head = `<tr><th>調出 ＼ 調入</th>${dsts.map((d) => `<th class="n">${esc(shortOf(d))}</th>`).join('')}<th class="n">合計</th></tr>`;
+  const colTot = {}, rows = srcs.map((s) => {
+    let rowTot = 0;
+    const tds = dsts.map((d) => {
+      const hit = flows[s].find((x) => x.node === d);
+      if (!hit) return '<td class="n mx0">—</td>';
+      rowTot += hit.amount;
+      colTot[d] = (colTot[d] || 0) + hit.amount;
+      return `<td class="n mx"><b>${n2(hit.amount)}</b><i>${hit.docs} 張</i></td>`;
+    }).join('');
+    return `<tr><th class="rowh">${esc(label(s))}</th>${tds}<td class="n"><b>${n2(rowTot)}</b></td></tr>`;
+  }).join('');
+  const grand = dsts.reduce((a, d) => a + (colTot[d] || 0), 0);
+  const foot = `<tr class="total"><th class="rowh">合計</th>${dsts.map((d) =>
+    `<td class="n">${n2(colTot[d] || 0)}</td>`).join('')}<td class="n">${n2(grand)}</td></tr>`;
+
+  return `<h3>調撥矩陣（${esc(RPT.ym)}　誰調給誰）</h3>
+    <div class="scroll"><table class="mtx"><thead>${head}</thead><tbody>${rows}${foot}</tbody></table></div>
+    <p class="note">橫的看是「這一店調出去給了誰」，直的看是「這一店收到誰的貨」。格子上面是金額、下面是張數，沒往來就留「—」。</p>`;
+}
+
+/** 點了調出數字之後，在表格下面攤開「調給了誰」 */
+function showFlow(node) {
+  const list = (RPT.flows && RPT.flows[node]) || [];
+  const label = (RPT.summary.nodes || []).includes(node)
+    ? RPT.summary.rows[RPT.summary.nodes.indexOf(node)].slice(0, 2).join(' ') : node;
+  if (!list.length) { $('flow').innerHTML = ''; return; }
+  const sumDocs = list.reduce((s, x) => s + x.docs, 0);
+  const sumAmt = list.reduce((s, x) => s + x.amount, 0);
+  $('flow').innerHTML = `
+    <h3>${esc(label)} 本月調出去向（${list.length} 家 · ${sumDocs} 張 · ${n2(sumAmt)} 元）
+      <button class="sm line" id="flowClose" style="margin-left:8px">收起</button></h3>
+    <div class="scroll"><table>
+      <thead><tr><th>品牌</th><th>門市</th><th class="n">單數</th><th class="n">金額</th></tr></thead>
+      <tbody>${list.map((x) => `<tr><td>${esc(x.brand)}</td><td>${esc(x.store)}</td>
+        <td class="n">${x.docs}</td><td class="n">${n2(x.amount)}</td></tr>`).join('')}
+        <tr class="total"><td>合計</td><td></td><td class="n">${sumDocs}</td><td class="n">${n2(sumAmt)}</td></tr>
+      </tbody></table></div>`;
+  $('flowClose').onclick = () => { $('flow').innerHTML = ''; };
+  $('flow').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+}
+
+function paintReport() {
+  const d = RPT.detail, s = RPT.summary;
+  $('rpt').innerHTML = `
+    ${matrixHtml()}
+    <h3>每店進出彙總（${esc(RPT.ym)}）</h3>
+    <div class="scroll"><table>${tableHtml(s.headers, s.rows, true, s.nodes)}</table></div>
+    <p class="note">調出單數／調出總額有底線的數字可以點，會列出這一店調給了哪幾家門市、各幾張、各多少錢。</p>
+    <div id="flow"></div>
+    <div class="row" style="margin-top:10px">
+      <div style="flex:0"><button id="dlx">下載 Excel（每個品牌一個分頁）</button></div>
+      <div style="flex:0"><button class="line sm" id="dl1">明細 CSV</button></div>
+      ${RPT.xlsxUrl ? `<div style="flex:0"><a href="${RPT.xlsxUrl}"><button class="line sm">整份試算表</button></a></div>` : ''}
+    </div>
+    <h3>逐張明細（${d.rows.length} 張）</h3>
+    <div class="scroll"><table>${tableHtml(d.headers, d.rows, false)}</table></div>
+    <p class="note">會計認的是<b>應撥總額</b>；實收總額與差異總額只是拿來追問題，不進帳。
+    <b>下載 Excel</b> 給的是 .xlsx，裡面有「彙總、全部明細、墨竹亭、一悟燒肉、小辛辣、鼎兆元總部」六個分頁；
+    每個品牌的分頁收的是「調出或調入其中一方是這個品牌」的單。
+    「明細 CSV」是單張表，已加 UTF-8 BOM，Excel 開不會亂碼。彙總的「↳ 調出至」子列在 Excel 的彙總分頁裡看得到。</p>`;
+  $('dlx').onclick = downloadXlsx;
+  $('dl1').onclick = () => csv(RPT.detail, `調撥月報_${RPT.ym}_明細.csv`);
+  $('rpt').querySelectorAll('a.flow').forEach((a) => { a.onclick = () => showFlow(a.dataset.node); });
+}
+
+// ── 產生真正的 .xlsx（多分頁）──────────────────────────
+// CSV 沒有「分頁」這種東西，要每個品牌一個分頁只能產 xlsx。
+// xlsx＝一包 zip 裡的幾個 XML，這裡用「不壓縮（store）」的 zip 自己組，不依賴任何外部套件。
+const CRC_TABLE = (() => {
+  const t = new Uint32Array(256);
+  for (let n = 0; n < 256; n++) {
+    let c = n;
+    for (let k = 0; k < 8; k++) c = (c & 1) ? (0xEDB88320 ^ (c >>> 1)) : (c >>> 1);
+    t[n] = c >>> 0;
+  }
+  return t;
+})();
+function crc32(buf) {
+  let c = 0xFFFFFFFF;
+  for (let i = 0; i < buf.length; i++) c = CRC_TABLE[(c ^ buf[i]) & 0xFF] ^ (c >>> 8);
+  return (c ^ 0xFFFFFFFF) >>> 0;
+}
+function zipStore(files) {
+  const enc = new TextEncoder();
+  const chunks = [], central = [];
+  let offset = 0;
+  const now = new Date();
+  const dosTime = ((now.getHours() << 11) | (now.getMinutes() << 5) | (now.getSeconds() >> 1)) & 0xFFFF;
+  const dosDate = (((now.getFullYear() - 1980) << 9) | ((now.getMonth() + 1) << 5) | now.getDate()) & 0xFFFF;
+
+  const u32 = (v) => [v & 255, (v >>> 8) & 255, (v >>> 16) & 255, (v >>> 24) & 255];
+  const u16 = (v) => [v & 255, (v >>> 8) & 255];
+
+  files.forEach((f) => {
+    const name = enc.encode(f.name);
+    const data = enc.encode(f.text);
+    const crc = crc32(data);
+    const local = new Uint8Array([...u32(0x04034b50), ...u16(20), ...u16(0), ...u16(0),
+      ...u16(dosTime), ...u16(dosDate), ...u32(crc), ...u32(data.length), ...u32(data.length),
+      ...u16(name.length), ...u16(0)]);
+    chunks.push(local, name, data);
+    central.push(new Uint8Array([...u32(0x02014b50), ...u16(20), ...u16(20), ...u16(0), ...u16(0),
+      ...u16(dosTime), ...u16(dosDate), ...u32(crc), ...u32(data.length), ...u32(data.length),
+      ...u16(name.length), ...u16(0), ...u16(0), ...u16(0), ...u16(0), ...u32(0), ...u32(offset)]),
+      name);
+    offset += local.length + name.length + data.length;
+  });
+
+  const cdStart = offset;
+  let cdSize = 0;
+  central.forEach((c) => { cdSize += c.length; });
+  const eocd = new Uint8Array([...u32(0x06054b50), ...u16(0), ...u16(0),
+    ...u16(files.length), ...u16(files.length), ...u32(cdSize), ...u32(cdStart), ...u16(0)]);
+
+  const all = chunks.concat(central, [eocd]);
+  let total = 0;
+  all.forEach((a) => { total += a.length; });
+  const out = new Uint8Array(total);
+  let pos = 0;
+  all.forEach((a) => { out.set(a, pos); pos += a.length; });
+  return out;
+}
+const xe = (s) => String(s == null ? '' : s)
+  .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+function colRef(i) {
+  let s = '';
+  i += 1;
+  while (i > 0) { const m = (i - 1) % 26; s = String.fromCharCode(65 + m) + s; i = (i - m - 1) / 26; }
+  return s;
+}
+function sheetXml(headers, rows) {
+  const all = [headers].concat(rows);
+  const body = all.map((r, ri) => {
+    const cells = r.map((v, ci) => {
+      const ref = colRef(ci) + (ri + 1);
+      const numeric = typeof v === 'number' || (v !== '' && v !== null && v !== undefined && !isNaN(v) && String(v).trim() !== '');
+      return (ri > 0 && numeric)
+        ? `<c r="${ref}"><v>${Number(v)}</v></c>`
+        : `<c r="${ref}" t="inlineStr"><is><t xml:space="preserve">${xe(v)}</t></is></c>`;
+    }).join('');
+    return `<row r="${ri + 1}">${cells}</row>`;
+  }).join('');
+  return `<?xml version="1.0" encoding="UTF-8"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData>${body}</sheetData></worksheet>`;
+}
+function buildXlsx(sheets) {
+  const files = [];
+  files.push({
+    name: '[Content_Types].xml',
+    text: `<?xml version="1.0" encoding="UTF-8"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>${sheets.map((s, i) => `<Override PartName="/xl/worksheets/sheet${i + 1}.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet"/>`).join('')}</Types>`
+  });
+  files.push({
+    name: '_rels/.rels',
+    text: `<?xml version="1.0" encoding="UTF-8"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>`
+  });
+  files.push({
+    name: 'xl/workbook.xml',
+    text: `<?xml version="1.0" encoding="UTF-8"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets>${sheets.map((s, i) => `<sheet name="${xe(s.name)}" sheetId="${i + 1}" r:id="rId${i + 1}"/>`).join('')}</sheets></workbook>`
+  });
+  files.push({
+    name: 'xl/_rels/workbook.xml.rels',
+    text: `<?xml version="1.0" encoding="UTF-8"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">${sheets.map((s, i) => `<Relationship Id="rId${i + 1}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet${i + 1}.xml"/>`).join('')}</Relationships>`
+  });
+  sheets.forEach((s, i) => {
+    files.push({ name: `xl/worksheets/sheet${i + 1}.xml`, text: sheetXml(s.headers, s.rows) });
+  });
+  return zipStore(files);
+}
+
+/** 月報 xlsx：彙總 ＋ 全部明細 ＋ 每個品牌一張分頁 */
+function reportSheets() {
+  const H = RPT.detail.headers;
+  const iOutBrand = H.indexOf('調出品牌'), iInBrand = H.indexOf('調入品牌');
+  const brands = ['墨竹亭', '一悟燒肉', '小辛辣', '鼎兆元總部'];
+  const sheets = [
+    { name: '彙總', headers: RPT.summary.headers, rows: RPT.summary.expanded },
+    { name: '全部明細', headers: H, rows: RPT.detail.rows }
+  ];
+  brands.forEach((b) => {
+    const rows = RPT.detail.rows.filter((r) => r[iOutBrand] === b || r[iInBrand] === b);
+    sheets.push({ name: b, headers: H, rows: rows });
+  });
+  return sheets;
+}
+
+function downloadXlsx() {
+  const bytes = buildXlsx(reportSheets());
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([bytes],
+    { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }));
+  a.download = `調撥月報_${RPT.ym}.xlsx`;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+}
+
+function csv(t, filename) {
+  const q = (v) => `"${String(v == null ? '' : v).replace(/"/g, '""')}"`;
+  const body = [t.headers].concat(t.rows).map((r) => r.map(q).join(',')).join('\r\n');
+  const blob = new Blob(['﻿' + body], { type: 'text/csv;charset=utf-8' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = filename;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+}
+
+// ── 管理 ──────────────────────────────────────────────
+let ADM = null;
+function paintAdmin(data) {
+  ADM = data;
+  const rs = data.reasons;
+  $('rtab').innerHTML = `<thead><tr><th>代碼</th><th>名稱</th><th>類型</th><th class="n">使用次數</th><th>狀態</th><th></th></tr></thead>
+    <tbody>${rs.map((r) => `<tr class="${r.on ? '' : 'off'}">
+      <td>${esc(r.code)}</td>
+      <td><input class="rn" data-code="${r.code}" value="${esc(r.name)}" style="min-width:130px"></td>
+      <td>${esc(r.type)}</td><td class="n">${r.uses}</td>
+      <td>${r.on ? '啟用中' : '已停用'}</td>
+      <td style="white-space:nowrap">
+        <button class="sm line rsave" data-code="${r.code}">改名</button>
+        ${r.type === '固定' ? '<span class="tag">固定項不可停用</span>'
+        : `<button class="sm line rtog" data-code="${r.code}" data-on="${r.on ? 1 : 0}">${r.on ? '停用' : '啟用'}</button>
+           <button class="sm line rmg" data-code="${r.code}">合併到…</button>`}
+      </td></tr>`).join('')}</tbody>`;
+
+  const brands = [...new Set(data.items.map((i) => i.brand))];
+  $('mbrand').innerHTML = '<option value="">全部</option>' + brands.map((b) => `<option>${esc(b)}</option>`).join('');
+  paintMem();
+  bindAdmin();
+}
+
+function paintMem() {
+  const f = $('mbrand').value;
+  const list = ADM.items.filter((i) => !f || i.brand === f);
+  $('mtab').innerHTML = `<thead><tr><th>品牌</th><th>品項</th><th>規格</th><th>單位</th><th class="n">最近單價</th><th class="n">用過幾次</th><th></th></tr></thead>
+    <tbody>${list.length ? list.map((i) => `<tr>
+      <td>${esc(i.brand)}</td><td>${esc(i.name)}</td><td>${esc(i.spec)}</td><td>${esc(i.unit)}</td>
+      <td class="n">${n2(i.price)}</td><td class="n">${i.uses}</td>
+      <td><button class="sm line mdel" data-brand="${esc(i.brand)}" data-name="${esc(i.name)}">刪除</button></td>
+    </tr>`).join('') : '<tr><td colspan="7">還沒有品項記憶</td></tr>'}</tbody>`;
+  $('mtab').querySelectorAll('.mdel').forEach((b) => {
+    b.onclick = () => {
+      if (!confirm(`刪掉「${b.dataset.brand} / ${b.dataset.name}」的記憶？舊單不受影響。`)) return;
+      adm({ op: 'memoryDelete', brand: b.dataset.brand, name: b.dataset.name }, '已刪除');
+    };
+  });
+}
+$('mbrand').onchange = paintMem;
+
+function bindAdmin() {
+  $('rtab').querySelectorAll('.rsave').forEach((b) => {
+    b.onclick = () => {
+      const inp = $('rtab').querySelector(`.rn[data-code="${b.dataset.code}"]`);
+      adm({ op: 'reason', code: b.dataset.code, name: inp.value.trim() }, '已改名');
+    };
+  });
+  $('rtab').querySelectorAll('.rtog').forEach((b) => {
+    b.onclick = () => adm({ op: 'reason', code: b.dataset.code, '啟用': b.dataset.on !== '1' },
+      b.dataset.on === '1' ? '已停用' : '已啟用');
+  });
+  $('rtab').querySelectorAll('.rmg').forEach((b) => {
+    b.onclick = () => {
+      const others = ADM.reasons.filter((r) => r.code !== b.dataset.code);
+      const to = prompt('要併到哪一個？填代碼：\n' + others.map((r) => `${r.code}　${r.name}`).join('\n'));
+      if (!to) return;
+      adm({ op: 'reasonMerge', from: b.dataset.code, to: to.trim() }, '已合併，舊單的代碼也一起改過去了');
+    };
+  });
+}
+
+async function adm(payload, okText, after) {
+  const res = await post('adminUpdate', Object.assign({ pin_master: PIN }, payload));
+  if (!res.ok) return show($('amsg'), 'err', res.error);
+  if (after) after();
+  const d = await post('adminData', { pin_master: PIN });
+  if (d.ok) paintAdmin(d.data);
+  show($('amsg'), 'ok', okText + (res.data && res.data.moved ? `（搬了 ${res.data.moved} 筆明細）` : ''));
+}
+
+// ── 啟動 ──────────────────────────────────────────────
+(async function boot() {
+  const b = await post('bootstrap', {});
+  if (b.ok) {
+    NODES = b.data.nodes;
+    $('node').innerHTML = '<option value="">全部門市</option>' +
+      NODES.map((n) => `<option value="${esc(n.name)}">${esc(n.short)}</option>`).join('');
+    $('ym').value = String(b.data.today).slice(0, 7);
+  }
+})();
+</script>
+</body>
+</html>

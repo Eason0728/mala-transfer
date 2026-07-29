@@ -1,0 +1,935 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>鼎兆元調撥系統</title>
+<style>
+/* ── 色票 ───────────────────────────────────────────────
+   Eason 2026-07-29：版面要明亮，所以固定走淺色，不跟手機的深色模式走。
+   識別色是藍（避開庫存綠／打卡黃／績效紅），狀態色照 spec §4.3。   */
+/* ── 依「我在哪一店」換品牌配色 ──────────────────────────
+   主色取自各品牌 logo 的實際用色，再降彩度到白字對比 4.5 以上：
+     墨竹亭＝青綠（logo #80c0c0）　小辛辣＝品牌紅（logo #e04020 / 手冊 #E8380D）
+     一悟燒肉＝石墨灰（logo 本來就是純黑白，沒有色相）　中央廚房＝維持中性藍
+   連底色也跟著換：--panel（卡片）比 --bg（頁面）淺一階，--head（標題區）最深。
+   狀態色（草稿灰／已出貨橘／已簽收綠）不跟著換——那是語意，換了會看不懂。 */
+:root{
+  color-scheme:light;
+  --bg:#f1f4f8; --panel:#fdfeff; --head:#e7ecf3; --line:#e1e7ef;
+  --ink:#28323e; --dim:#7c8b9d;
+  --accent:#3a72b5; --accent-soft:rgba(58,114,181,.10); --ship:#3a72b5;
+  --brand:#d2542f; --draft:#a3aebc; --review:#d99245; --done:#4a9e78;
+  --danger:#c9615f; --shadow:0 1px 2px rgba(30,45,65,.04),0 5px 16px rgba(30,45,65,.045);
+}
+:root[data-brand="mozhu"]{
+  --accent:#2f7d7d; --accent-soft:rgba(47,125,125,.10); --ship:#2f7d7d;
+  --bg:#edf4f3; --panel:#fbfdfd; --head:#dcebe9; --line:#dbe8e5;
+}
+:root[data-brand="mala"]{
+  --accent:#c4402a; --accent-soft:rgba(196,64,42,.09); --ship:#c4402a;
+  --bg:#f8f1ef; --panel:#fefbfa; --head:#f4e2dc; --line:#ecdeda;
+}
+:root[data-brand="yiwu"]{
+  --accent:#47505c; --accent-soft:rgba(71,80,92,.09); --ship:#47505c;
+  --bg:#eff2f4; --panel:#fbfcfd; --head:#e4e8ec; --line:#dfe4e9;
+}
+/* 中央廚房（鼎兆元總部）刻意用紫——跟青綠／紅／石墨三個品牌一眼分得開 */
+:root[data-brand="hq"]{
+  --accent:#6a4fa3; --accent-soft:rgba(106,79,163,.10); --ship:#6a4fa3;
+  --bg:#f3f0f9; --panel:#fdfcfe; --head:#e8e2f3; --line:#e4dcf0;
+}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;padding:0}
+body{
+  background:var(--bg);color:var(--ink);
+  font:16px/1.6 -apple-system,BlinkMacSystemFont,"PingFang TC","Noto Sans TC","Segoe UI",sans-serif;
+  padding-bottom:calc(150px + env(safe-area-inset-bottom));
+}
+.app{max-width:540px;margin:0 auto}
+
+/* ── 標頭 ───────────────────────────────────────────── */
+/* 標題區給一層底色：一悟的 logo 是白底，放在純白上會整塊消失 */
+header{
+  position:sticky;top:0;z-index:20;background:var(--head);border-bottom:1px solid var(--line);
+  padding:calc(10px + env(safe-area-inset-top)) 12px 10px;
+}
+/* 左邊：三個 logo 疊在「鼎兆元｜調撥系統」上方；右邊：會計專區疊在所在門市上方 */
+.hbar{display:flex;align-items:center;justify-content:space-between;gap:10px}
+.hleft{display:flex;flex-direction:column;align-items:flex-start;gap:7px}
+.side{display:flex;flex-direction:column;align-items:flex-end;gap:5px}
+.logos{display:flex;align-items:center;gap:7px}
+.logos img{
+  height:34px;width:34px;object-fit:contain;display:block;
+  background:#fff;border-radius:8px;padding:3px;border:1px solid rgba(30,45,65,.07);
+}
+.acct{
+  font-size:11px;font-weight:600;color:var(--accent);text-decoration:none;
+  border:1px solid var(--line);border-radius:999px;padding:3px 9px;white-space:nowrap;background:var(--panel);
+}
+.acct:active{background:var(--accent-soft)}
+.logo{font-size:18px;font-weight:800;letter-spacing:.03em;white-space:nowrap}
+.logo b{color:var(--dim);font-weight:400;margin:0 1px}
+.chip{
+  font-size:11px;color:var(--accent);background:rgba(255,255,255,.8);
+  border:1px solid rgba(30,45,65,.10);
+  border-radius:999px;padding:3px 9px;font-weight:600;white-space:nowrap;
+}
+
+/* ── 頁面 ───────────────────────────────────────────── */
+main{padding:16px}
+.page{display:none}
+.page.on{display:block}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:16px;margin-bottom:14px;box-shadow:var(--shadow)}
+.card h2{font-size:13px;font-weight:700;color:var(--accent);letter-spacing:.08em;margin:0 0 14px}
+
+label{display:block;font-size:12px;color:var(--dim);margin-bottom:5px;font-weight:500}
+input,select,textarea{
+  width:100%;font:inherit;font-size:16px;color:var(--ink);background:var(--bg);
+  border:1px solid var(--line);border-radius:10px;padding:11px 12px;appearance:none;
+}
+input:focus,select:focus,textarea:focus{outline:none;border-color:var(--accent);background:var(--panel)}
+input:disabled,select:disabled{opacity:.55}
+select{background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8'%3E%3Cpath d='M1 1l5 5 5-5' stroke='%236b7c90' stroke-width='1.6' fill='none' stroke-linecap='round'/%3E%3C/svg%3E");
+        background-repeat:no-repeat;background-position:right 12px center;padding-right:32px}
+.f{margin-bottom:12px}
+.f:last-child{margin-bottom:0}
+.two{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+
+/* ── 品項卡 ─────────────────────────────────────────── */
+.item{background:var(--bg);border:1px solid var(--line);border-radius:12px;padding:12px;margin-bottom:10px;position:relative}
+.item .del{
+  position:absolute;top:8px;right:8px;width:30px;height:30px;border:0;border-radius:8px;
+  background:transparent;color:var(--dim);font-size:17px;line-height:1;cursor:pointer;
+}
+.item .del:active{background:var(--line)}
+.item .nmwrap{position:relative;margin-bottom:10px;padding-right:34px}
+.sub{text-align:right;font-size:13px;color:var(--dim);margin-top:8px}
+.sub b{color:var(--ink);font-size:15px}
+.cands{
+  position:absolute;left:0;right:34px;top:100%;margin-top:4px;z-index:15;
+  background:var(--panel);border:1px solid var(--accent);border-radius:10px;overflow:hidden;
+  box-shadow:0 8px 24px rgba(16,32,54,.16);display:none;
+}
+.cands.on{display:block}
+.cands div{padding:10px 12px;font-size:15px;cursor:pointer;border-bottom:1px solid var(--line)}
+.cands div:last-child{border-bottom:0}
+.cands div:active{background:var(--accent-soft)}
+.cands span{color:var(--dim);font-size:12px;margin-left:8px}
+
+/* ── 按鈕 ───────────────────────────────────────────── */
+button{font:inherit;cursor:pointer}
+.btn{
+  width:100%;border:0;border-radius:11px;padding:14px;font-size:16px;font-weight:700;
+  background:var(--accent);color:#fff;
+}
+.btn:disabled{opacity:.45}
+.btn.ghost{background:transparent;border:1px dashed var(--line);color:var(--dim);font-weight:500}
+.btn.line{background:transparent;border:1px solid var(--line);color:var(--ink);font-weight:600}
+
+/* ── 底部總額列 ─────────────────────────────────────── */
+.bar{
+  position:fixed;left:0;right:0;bottom:calc(62px + env(safe-area-inset-bottom));z-index:19;
+  background:var(--panel);border-top:1px solid var(--line);padding:10px 16px;
+}
+.bar .in{max-width:540px;margin:0 auto;display:flex;align-items:center;gap:12px}
+.bar .amt{font-size:13px;color:var(--dim);white-space:nowrap}
+.bar .amt b{display:block;font-size:21px;color:var(--ink);font-weight:800;letter-spacing:-.01em}
+.bar .btn{width:auto;flex:1;padding:13px}
+
+/* ── 底部頁籤 ───────────────────────────────────────── */
+nav{
+  position:fixed;left:0;right:0;bottom:0;z-index:20;background:var(--panel);
+  border-top:1px solid var(--line);padding-bottom:env(safe-area-inset-bottom);
+}
+nav .in{max-width:540px;margin:0 auto;display:grid;grid-template-columns:repeat(4,1fr)}
+nav button{
+  border:0;background:transparent;color:var(--dim);padding:9px 0 10px;
+  font-size:11px;font-weight:600;display:flex;flex-direction:column;align-items:center;gap:3px;
+}
+nav button.on{color:var(--accent)}
+nav svg{width:22px;height:22px;stroke:currentColor;fill:none;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
+
+/* ── 提示 ───────────────────────────────────────────── */
+.msg{border-radius:11px;padding:12px 14px;font-size:14px;margin-bottom:14px;display:none;line-height:1.55}
+.msg.ok{display:block;background:rgba(46,168,106,.12);border:1px solid var(--done);color:var(--done)}
+.msg.err{display:block;background:rgba(214,69,69,.12);border:1px solid var(--danger);color:var(--danger)}
+.msg a{color:inherit;font-weight:700;text-decoration:underline;cursor:pointer}
+.empty{text-align:center;color:var(--dim);padding:56px 24px;font-size:14px}
+.empty b{display:block;color:var(--ink);font-size:16px;margin-bottom:6px}
+.pick{display:grid;grid-template-columns:repeat(2,1fr);gap:10px}
+.pick button{
+  border:1px solid var(--line);background:var(--bg);color:var(--ink);
+  border-radius:11px;padding:14px;font-size:16px;font-weight:600;
+}
+.pick button.on{border-color:var(--accent);background:var(--accent-soft);color:var(--accent)}
+.note{font-size:12px;color:var(--dim);margin-top:10px;line-height:1.6}
+
+/* ── 單據詳情 ───────────────────────────────────────── */
+.dochead{display:flex;align-items:center;gap:10px;margin-bottom:14px}
+.back{border:1px solid var(--line);background:var(--panel);color:var(--ink);border-radius:9px;padding:7px 12px;font-size:14px}
+.docno{font-weight:800;font-size:15px;letter-spacing:.02em}
+.pill{margin-left:auto;font-size:12px;font-weight:700;border-radius:999px;padding:4px 11px;color:#fff;white-space:nowrap}
+.pill.s0{background:var(--draft)} .pill.s1{background:var(--review)} .pill.s2{background:var(--done)}
+.flow{display:flex;align-items:center;gap:6px;font-size:15px;font-weight:700;margin-bottom:4px}
+.flow span{color:var(--dim);font-weight:400}
+.kv{display:grid;grid-template-columns:auto 1fr;gap:5px 14px;font-size:14px;margin-top:12px}
+.kv dt{color:var(--dim);font-size:13px}
+.kv dd{margin:0}
+.steps{display:flex;margin:4px 0 2px}
+.steps div{flex:1;text-align:center;font-size:11px;color:var(--dim);position:relative;padding-top:22px}
+.steps div::before{content:"";position:absolute;top:6px;left:50%;transform:translateX(-50%);
+  width:11px;height:11px;border-radius:50%;background:var(--line);border:2px solid var(--panel)}
+.steps div::after{content:"";position:absolute;top:11px;left:-50%;width:100%;height:2px;background:var(--line)}
+.steps div:first-child::after{display:none}
+.steps div.done{color:var(--ink);font-weight:600}
+.steps div.done::before{background:var(--done)}
+.steps div.done::after{background:var(--done)}
+.steps b{display:block;font-weight:400;font-size:10px;color:var(--dim);margin-top:1px}
+.line{border-top:1px solid var(--line);padding:11px 0}
+.line:last-child{padding-bottom:0}
+.line .t{display:flex;gap:8px;align-items:baseline}
+.line .t b{font-size:15px}
+.line .t i{font-style:normal;color:var(--dim);font-size:12px}
+.line .t em{font-style:normal;margin-left:auto;color:var(--dim);font-size:13px}
+.qty{font-size:13px;color:var(--dim);margin-top:3px}
+.qty b{color:var(--ink)}
+.gap{color:var(--danger);font-weight:700}
+.rowin{display:grid;grid-template-columns:1fr 1.3fr;gap:8px;margin-top:8px}
+.logs{font-size:12.5px}
+.logs div{border-top:1px solid var(--line);padding:8px 0;color:var(--dim)}
+.logs div:first-child{border-top:0}
+.logs b{color:var(--ink);font-weight:600}
+.acts{display:flex;gap:10px;margin-top:14px}
+.acts .btn{flex:1}
+
+/* ── 單據卡片列表 ───────────────────────────────────── */
+.cnt{display:inline-block;min-width:20px;text-align:center;background:var(--accent-soft);color:var(--accent);
+     border-radius:999px;padding:1px 7px;font-size:12px;margin-left:4px;font-weight:700}
+.dc{display:block;width:100%;text-align:left;border:1px solid var(--line);background:var(--bg);
+    border-radius:11px;padding:12px;margin-bottom:9px;color:var(--ink);font:inherit}
+.dc:active{border-color:var(--accent)}
+.dc .r1{display:flex;align-items:center;gap:8px;margin-bottom:5px}
+.dc .r1 b{font-size:14.5px;font-weight:700}
+.dc .r1 .pill{margin-left:auto;font-size:11px;padding:2px 9px}
+.dc .r2{font-size:12.5px;color:var(--dim);font-variant-numeric:tabular-nums}
+.dc .r2 b{color:var(--ink);font-weight:600}
+.dc .r2 .gap{margin-left:6px}
+.dc .r3{font-size:11.5px;color:var(--dim);opacity:.72;margin-top:3px;font-variant-numeric:tabular-nums}
+.none{color:var(--dim);font-size:13.5px;padding:6px 0}
+</style>
+</head>
+<body>
+
+<div class="app">
+  <header>
+    <div class="hbar">
+    <div class="hleft">
+      <div class="logos">
+        <img src="data:image/png;base64,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" alt="墨竹亭">
+        <img src="data:image/jpeg;base64,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" alt="麻的小辛辣">
+        <img src="data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAASABIAAD/4QBMRXhpZgAATU0AKgAAAAgAAYdpAAQAAAABAAAAGgAAAAAAA6ABAAMAAAABAAEAAKACAAQAAAABAAAAYKADAAQAAAABAAAAYAAAAAD/4QnSaHR0cDovL25zLmFkb2JlLmNvbS94YXAvMS4wLwA8P3hwYWNrZXQgYmVnaW49Iu+7vyIgaWQ9Ilc1TTBNcENlaGlIenJlU3pOVGN6a2M5ZCI/PiA8eDp4bXBtZXRhIHhtbG5zOng9ImFkb2JlOm5zOm1ldGEvIiB4OnhtcHRrPSJYTVAgQ29yZSA2LjAuMCI+IDxyZGY6UkRGIHhtbG5zOnJkZj0iaHR0cDovL3d3dy53My5vcmcvMTk5OS8wMi8yMi1yZGYtc3ludGF4LW5zIyI+IDxyZGY6RGVzY3JpcHRpb24gcmRmOmFib3V0PSIiIHhtbG5zOnBob3Rvc2hvcD0iaHR0cDovL25zLmFkb2JlLmNvbS9waG90b3Nob3AvMS4wLyIgcGhvdG9zaG9wOkluc3RydWN0aW9ucz0iRkJNRDBhMDAwYTFmMDIwMDAwZDgxOTAwMDA4ZDJjMDAwMDVmMmUwMDAwNDgyZjAwMDBiNzU2MDAwMGEyODgwMDAwM2Q5NjAwMDBkMTk3MDAwMGFkOTgwMDAwMTFjNzAwMDAiLz4gPC9yZGY6UkRGPiA8L3g6eG1wbWV0YT4gICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICA8P3hwYWNrZXQgZW5kPSJ3Ij8+AP/tAK5QaG90b3Nob3AgMy4wADhCSU0EBAAAAAAAdhwBWgADGyVHHAIAAAIAAhwCKABiRkJNRDBhMDAwYTFmMDIwMDAwZDgxOTAwMDA4ZDJjMDAwMDVm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" alt="一悟燒肉">
+      </div>
+      <div class="logo">鼎兆元<b>｜</b>調撥系統</div>
+    </div>
+    <div class="side">
+      <a class="acct" id="acctLink" href="report.html">會計專區 ›</a>
+      <div class="chip" id="chip">未設定</div>
+    </div>
+    </div>
+  </header>
+
+  <main>
+    <!-- ① 開單 -->
+    <section class="page on" id="p-new">
+      <div class="msg" id="msg"></div>
+
+      <div class="card">
+        <h2>單據資訊</h2>
+        <div class="two">
+          <div class="f"><label>調出方</label><select id="from"></select></div>
+          <div class="f"><label>調入方</label><select id="to"></select></div>
+        </div>
+        <div class="two">
+          <div class="f"><label>調撥日期</label><input id="date" type="date"></div>
+          <div class="f"><label>預計到貨日</label><input id="eta" type="date"></div>
+        </div>
+        <div class="f"><label>打包人</label><input id="packer" placeholder="誰打包的"></div>
+        <div class="f"><label>備註（選填）</label><input id="note" placeholder="例如：第二批、司機小陳帶"></div>
+      </div>
+
+      <div class="card">
+        <h2>品項</h2>
+        <div id="items"></div>
+        <button class="btn ghost" id="addBtn">＋ 加一個品項</button>
+      </div>
+    </section>
+
+    <!-- ② 待辦 -->
+    <section class="page" id="p-todo">
+      <div class="card">
+        <h2>待我簽收 <span class="cnt" id="c-recv">0</span></h2>
+        <div id="l-recv"></div>
+      </div>
+      <div class="card">
+        <h2>我的草稿 <span class="cnt" id="c-draft">0</span></h2>
+        <div id="l-draft"></div>
+      </div>
+      <div class="card">
+        <h2>我出的貨，還沒被簽收 <span class="cnt" id="c-ship">0</span></h2>
+        <div id="l-ship"></div>
+      </div>
+    </section>
+
+    <!-- ③ 查單 -->
+    <section class="page" id="p-find">
+      <div class="card">
+        <h2>查單</h2>
+        <div class="f"><label>單號（可只打一段）</label><input id="qno" placeholder="M01-001 或 TR-20260729" autocomplete="off"></div>
+        <div class="two">
+          <div class="f"><label>調撥日期起</label><input id="qfrom" type="date"></div>
+          <div class="f"><label>迄</label><input id="qto" type="date"></div>
+        </div>
+        <div class="two">
+          <div class="f"><label>門市（調出或調入）</label><select id="qnode"></select></div>
+          <div class="f"><label>狀態</label><select id="qst">
+            <option value="">全部</option><option>草稿</option><option>已出貨</option><option>已簽收</option>
+          </select></div>
+        </div>
+        <div class="acts"><button class="btn line" id="qclear">清空條件</button><button class="btn" id="qbtn">查詢</button></div>
+      </div>
+      <div class="msg" id="qmsg"></div>
+      <div id="qlist"></div>
+    </section>
+
+    <!-- 單據詳情（不在頁籤上，從查單或存檔訊息進來）-->
+    <section class="page" id="p-doc"></section>
+
+    <!-- ④ 我 -->
+    <section class="page" id="p-me">
+      <div class="card">
+        <h2>我在哪一店</h2>
+        <div class="pick" id="pick"></div>
+        <p class="note">選了之後，開單的「調出方」會預設成這一店；待辦清單也用這個判斷哪些單要你簽收、哪些是你自己出的貨。整個 app 的配色會換成這一店的品牌色。</p>
+      </div>
+      <div class="card">
+        <h2>我的名字</h2>
+        <div class="f"><input id="myname" placeholder="例如：阿明"></div>
+        <p class="note">開單時會自動填進「打包人」，不用每次重打。</p>
+      </div>
+    </section>
+  </main>
+</div>
+
+<div class="bar" id="bar">
+  <div class="in">
+    <div class="amt">單據總額<b id="total">0</b></div>
+    <button class="btn" id="saveBtn">存草稿</button>
+  </div>
+</div>
+
+<nav>
+  <div class="in">
+    <button class="on" data-p="new"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>開單</button>
+    <button data-p="todo"><svg viewBox="0 0 24 24"><path d="M9 11l3 3 8-8M20 12v6a2 2 0 01-2 2H6a2 2 0 01-2-2V6a2 2 0 012-2h9"/></svg>待辦</button>
+    <button data-p="find"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>查單</button>
+    <button data-p="me"><svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="3.5"/><path d="M5 20c0-3.3 3.1-6 7-6s7 2.7 7 6"/></svg>我</button>
+  </div>
+</nav>
+
+<script>
+'use strict';
+const API = 'https://script.google.com/macros/s/AKfycbxRqci1Cnu92TKoAfYIpDxDfxjGF3_ENrjQL1yurnkxOwZz9MyM9Eu9grIcdeKjbs8-/exec';
+const K_DRAFT = 'mala_transfer_draft';
+const K_ME = 'mala_transfer_me';
+
+// NODES 是 [{name, short, code}]，全名進資料庫、短名給手機畫面用
+let NODES = [], MEM = [], REASONS = [], TODAY = '', editingNo = '';
+const shortOf = (name) => (NODES.find((n) => n.name === name) || {}).short || name;
+const brandOfNode = (name) => (NODES.find((n) => n.name === name) || {}).brand || '';
+const HQ_BRAND = '鼎兆元總部';   // 中央廚房掛總部，不是門市品牌
+const BRAND_KEY = { '墨竹亭': 'mozhu', '小辛辣': 'mala', '一悟燒肉': 'yiwu', '鼎兆元總部': 'hq' };
+
+/** 依我所在的門市，把整個 app 換成該品牌的配色（央廚／未設定＝中性藍） */
+function paintTheme() {
+  const k = BRAND_KEY[brandOfNode(me().node)] || '';
+  if (k) document.documentElement.dataset.brand = k;
+  else document.documentElement.removeAttribute('data-brand');
+}
+
+/** 這張單的品項記憶屬於哪個品牌——規則與後端 Code.gs 的 brandOf_ 必須一致 */
+function currentBrand() {
+  const bf = brandOfNode($('from').value), bt = brandOfNode($('to').value);
+  if (bf === HQ_BRAND) return bt;
+  if (bt === HQ_BRAND) return bf;
+  return bf;
+}
+const brandMemory = () => MEM.filter((m) => m.brand === currentBrand());
+
+const $ = (id) => document.getElementById(id);
+// iframe／無痕／file:// 有時會擋 localStorage，擋了就當作沒存，不要讓整個 app 掛掉
+const lsSet = (k, v) => { try { localStorage.setItem(k, v); } catch (_) { /* 存不了就算了 */ } };
+const lsDel = (k) => { try { localStorage.removeItem(k); } catch (_) { /* 同上 */ } };
+const money = (n) => (Math.round(n * 100) / 100).toLocaleString('zh-TW');
+
+async function post(action, payload) {
+  const body = JSON.stringify({ action, payload });
+  // 單機測試版（tools/build-standalone.js 產生的單一檔案）會塞一個本機後端進來，
+  // 這時直接呼叫它，不走網路。正式版沒有這個變數，照常打 API。
+  if (window.__LOCAL_BACKEND__) return JSON.parse(window.__LOCAL_BACKEND__(body));
+  const r = await fetch(API, {
+    method: 'POST',
+    headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+    body: body
+  });
+  return r.json();
+}
+
+function say(kind, html) {
+  const m = $('msg');
+  m.className = 'msg ' + kind;
+  m.innerHTML = html;
+  if (kind) window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+function clearSay() { $('msg').className = 'msg'; }
+
+// ── 我的設定 ──────────────────────────────────────────
+function me() {
+  try { return JSON.parse(localStorage.getItem(K_ME) || '{}'); } catch (_) { return {}; }
+}
+function setMe(patch) {
+  const v = Object.assign(me(), patch);
+  lsSet(K_ME, JSON.stringify(v));
+  paintMe();
+}
+function paintMe() {
+  const m = me();
+  paintTheme();
+  $('chip').textContent = m.node ? '我在 ' + shortOf(m.node) : '未設定';
+  $('pick').querySelectorAll('button').forEach((b) => b.classList.toggle('on', b.dataset.node === m.node));
+  if ($('myname').value !== (m.name || '')) $('myname').value = m.name || '';
+}
+
+// ── 節點下拉（調入方不得出現調出方）───────────────────
+function paintNodes() {
+  const names = NODES.map((n) => n.name);
+  const keepFrom = names.includes($('from').value) ? $('from').value
+    : (names.includes(me().node) ? me().node : names[0]);
+  const keepTo = $('to').value;
+  // 選單顯示短名：全名在 375px 會被切掉（「墨竹亭新竹光復…」），短名帶品牌字不會混淆
+  const opt = (n, sel) => `<option value="${n.name}"${sel ? ' selected' : ''}>${n.short}</option>`;
+  $('from').innerHTML = NODES.map((n) => opt(n, n.name === keepFrom)).join('');
+  const rest = NODES.filter((n) => n.name !== $('from').value);
+  const to = rest.some((n) => n.name === keepTo) ? keepTo : rest[0].name;
+  $('to').innerHTML = rest.map((n) => opt(n, n.name === to)).join('');
+}
+
+// ── 品項卡 ────────────────────────────────────────────
+function addItem(v) {
+  v = v || {};
+  const d = document.createElement('div');
+  d.className = 'item';
+  d.innerHTML = `
+    <button class="del" aria-label="刪除這個品項">✕</button>
+    <div class="nmwrap">
+      <label>品項名稱</label>
+      <input class="nm" autocomplete="off" placeholder="打字會帶出用過的品項">
+      <div class="cands"></div>
+    </div>
+    <div class="two">
+      <div class="f"><label>規格</label><input class="sp" placeholder="500g"></div>
+      <div class="f"><label>單位</label><input class="un" placeholder="包"></div>
+    </div>
+    <div class="two">
+      <div class="f"><label>調撥單價</label><input class="pr" type="number" inputmode="decimal" min="0" step="0.01" placeholder="0"></div>
+      <div class="f"><label>應撥數量</label><input class="qt" type="number" inputmode="decimal" min="0" step="0.01" placeholder="0"></div>
+    </div>
+    <div class="sub">小計 <b class="st">0</b></div>`;
+
+  const q = (c) => d.querySelector(c);
+  q('.nm').value = v.name || ''; q('.sp').value = v.spec || '';
+  q('.un').value = v.unit || ''; q('.pr').value = v.price != null ? v.price : '';
+  q('.qt').value = v.qty != null ? v.qty : '';
+
+  q('.del').onclick = () => { d.remove(); ensureOne(); calc(); saveLocal(); };
+  d.querySelectorAll('input').forEach((i) => i.addEventListener('input', () => { calc(); saveLocal(); }));
+
+  // 品項記憶：前綴比對，最多 8 筆，使用次數多的在前（MEM 已由後端排序）
+  const box = q('.cands');
+  const hide = () => box.classList.remove('on');
+  q('.nm').addEventListener('input', () => {
+    const kw = q('.nm').value.trim().toLowerCase();
+    const hits = kw ? brandMemory().filter((m) => m.name.toLowerCase().indexOf(kw) === 0).slice(0, 8) : [];
+    if (!hits.length) return hide();
+    box.innerHTML = hits.map((h, i) =>
+      `<div data-i="${i}">${h.name}<span>${[h.spec, h.unit, h.price != null ? '$' + h.price : ''].filter(Boolean).join(' · ')}</span></div>`).join('');
+    box.querySelectorAll('div').forEach((el, i) => {
+      el.onclick = () => {
+        const h = hits[i];
+        q('.nm').value = h.name; q('.sp').value = h.spec || ''; q('.un').value = h.unit || '';
+        if (!q('.pr').value) q('.pr').value = h.price != null ? h.price : '';
+        hide(); calc(); saveLocal();
+      };
+    });
+    box.classList.add('on');
+  });
+  q('.nm').addEventListener('blur', () => setTimeout(hide, 180));
+
+  $('items').appendChild(d);
+  calc();
+}
+
+function ensureOne() { if (!document.querySelector('.item')) addItem(); }
+
+function readItems() {
+  return [...document.querySelectorAll('.item')].map((d) => ({
+    name: d.querySelector('.nm').value.trim(),
+    spec: d.querySelector('.sp').value.trim(),
+    unit: d.querySelector('.un').value.trim(),
+    price: d.querySelector('.pr').value,
+    qty: d.querySelector('.qt').value
+  }));
+}
+
+function calc() {
+  let total = 0;
+  [...document.querySelectorAll('.item')].forEach((d) => {
+    const sub = (Number(d.querySelector('.pr').value) || 0) * (Number(d.querySelector('.qt').value) || 0);
+    total += sub;
+    d.querySelector('.st').textContent = money(sub);
+  });
+  $('total').textContent = money(total);
+}
+
+// ── 表單 ↔ localStorage ───────────────────────────────
+function readForm() {
+  return {
+    editingNo: editingNo,
+    from: $('from').value, to: $('to').value, date: $('date').value, eta: $('eta').value,
+    packer: $('packer').value, note: $('note').value, items: readItems()
+  };
+}
+function saveLocal() { lsSet(K_DRAFT, JSON.stringify(readForm())); }
+function clearLocal() { lsDel(K_DRAFT); }
+
+function fillForm(f) {
+  editingNo = f.editingNo || '';
+  paintNodes();
+  if (f.from) $('from').value = f.from;
+  paintNodes();
+  if (f.to) $('to').value = f.to;
+  $('date').value = f.date || TODAY;
+  $('eta').value = f.eta || f.date || TODAY;
+  $('packer').value = f.packer || '';
+  $('note').value = f.note || '';
+  $('items').innerHTML = '';
+  (f.items && f.items.length ? f.items : [{}]).forEach(addItem);
+  lockWhenEditing();
+  calc();
+}
+
+function resetForm() {
+  editingNo = '';
+  clearLocal();
+  const m = me();
+  $('from').value = m.node || NODES[0].name;
+  paintNodes();
+  $('date').value = TODAY; $('eta').value = TODAY;
+  $('packer').value = m.name || ''; $('note').value = '';
+  $('items').innerHTML = '';
+  addItem();
+  lockWhenEditing();
+  calc();
+}
+
+/** 單號依「調出方＋調撥日期」產生，所以編輯既有草稿時這兩欄鎖住（spec §2.7 / IMMUTABLE） */
+function lockWhenEditing() {
+  const on = !!editingNo;
+  $('from').disabled = on;
+  $('date').disabled = on;
+  $('saveBtn').textContent = on ? '更新草稿' : '存草稿';
+}
+
+// ── 送出 ──────────────────────────────────────────────
+async function save() {
+  clearSay();
+  const f = readForm();
+  const payload = {
+    doc: {
+      '調出方': f.from, '調入方': f.to, '調撥日期': f.date, '預計到貨日': f.eta,
+      '打包人': f.packer.trim(), '備註': f.note.trim()
+    },
+    items: f.items.map((i) => ({
+      '品項名稱': i.name, '規格': i.spec, '單位': i.unit,
+      '調撥單價': i.price === '' ? '' : Number(i.price),
+      '應撥數量': i.qty === '' ? '' : Number(i.qty)
+    })),
+    '操作人': f.packer.trim()
+  };
+  if (editingNo) payload['單號'] = editingNo;
+
+  $('saveBtn').disabled = true;
+  let res;
+  try {
+    res = await post(editingNo ? 'updateDraft' : 'createDraft', payload);
+  } catch (err) {
+    $('saveBtn').disabled = false;
+    saveLocal();   // 斷網：資料留著，等一下可以再按一次
+    return say('err', '送不出去，可能是沒有網路。<br>你填的東西還在，恢復連線後再按一次就好。');
+  }
+  $('saveBtn').disabled = false;
+
+  if (!res.ok) { saveLocal(); return say('err', res.error + '　<small>[' + res.code + ']</small>'); }
+
+  const no = res.data['單號'];
+  await refreshMemory();
+  resetForm();
+  say('ok', `已存成草稿　<b>${no}</b><br><a id="openit">看這張單（可確認出貨）</a>　·　<a id="reopen">繼續編輯</a>`);
+  $('reopen').onclick = () => reopen(no);
+  $('openit').onclick = () => openDoc(no);
+}
+
+async function reopen(no) {
+  const res = await post('getDoc', { '單號': no });
+  if (!res.ok) return say('err', res.error);
+  const d = res.data.doc;
+  fillForm({
+    editingNo: no, from: d['調出方'], to: d['調入方'], date: d['調撥日期'], eta: d['預計到貨日'],
+    packer: d['打包人'], note: d['備註'],
+    items: res.data.items.map((i) => ({
+      name: i['品項名稱'], spec: i['規格'], unit: i['單位'], price: i['調撥單價'], qty: i['應撥數量']
+    }))
+  });
+  saveLocal();
+  say('ok', `正在編輯 <b>${no}</b>（調出方與調撥日期已鎖定，單號依這兩項產生）`);
+}
+
+// ── 單據詳情頁（T3-5）─────────────────────────────────
+let DOC = null, MODE = '', DOC_FROM = 'todo';   // MODE: '' | 'receive' | 'amend'
+
+const esc = (s) => String(s == null ? '' : s).replace(/[&<>"]/g, (c) =>
+  ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+const reasonName = (code) => {
+  const r = REASONS.find((x) => x.code === code);
+  return r ? r.name : (code || '');
+};
+
+async function openDoc(no, mode) {
+  const res = await post('getDoc', { '單號': no });
+  if (!res.ok) { say('err', res.error); return false; }
+  const cur = document.querySelector('.page.on');
+  if (cur && cur.id !== 'p-doc') DOC_FROM = cur.id.replace('p-', '');
+  DOC = res.data;
+  MODE = mode || '';
+  gotoPage('doc');
+  renderDoc();
+  return true;
+}
+
+function renderDoc() {
+  const d = DOC.doc, items = DOC.items, logs = DOC.logs;
+  const st = String(d['狀態']);
+  const stIdx = { '草稿': 0, '已出貨': 1, '已簽收': 2 }[st] || 0;
+  const mine = me().node;
+  const canShip = st === '草稿' && mine === d['調出方'];
+  const canRecv = st === '已出貨' && mine === d['調入方'];
+  const canAmend = st !== '草稿';
+  const editing = MODE === 'receive' || MODE === 'amend';
+
+  const time = (v) => v ? String(v).slice(5, 16).replace('T', ' ') : '';
+  const step = (i, label, ts) =>
+    `<div class="${stIdx >= i ? 'done' : ''}">${label}<b>${time(ts)}</b></div>`;
+
+  const rows = items.map((it) => {
+    const plan = Number(it['應撥數量']) || 0;
+    const got = it['實收數量'];
+    const diff = got === '' || got === null ? null : Math.round((Number(got) - plan) * 100) / 100;
+    const idx = String(it['列序']);
+    let body = `<div class="qty">應撥 <b>${plan}</b> ${esc(it['單位'])}`;
+    if (diff !== null) {
+      body += `　實收 <b>${got}</b>`;
+      if (diff !== 0) body += `　<span class="gap">${diff > 0 ? '+' + diff : diff}　${esc(reasonName(it['差異原因代碼']))}</span>`;
+    }
+    body += '</div>';
+
+    let edit = '';
+    if (editing) {
+      const opts = REASONS.map((r) => `<option value="${r.code}">${esc(r.name)}</option>`).join('');
+      edit = `<div class="rowin">
+        <div><label>實際簽收數量</label>
+          <input class="rq" data-idx="${idx}" type="number" inputmode="decimal" min="0" step="0.01"
+                 value="${got === '' || got === null ? '' : got}" placeholder="${plan}"></div>
+        <div><label>差異原因</label>
+          <select class="rr" data-idx="${idx}"><option value="">正常</option>${opts}<option value="OTHER">其他（自己打）</option></select></div>
+      </div>
+      <div class="f rc" data-idx="${idx}" style="display:none;margin-top:8px">
+        <input class="rx" data-idx="${idx}" maxlength="20" placeholder="原因限 20 字，例：司機少搬一箱"></div>`;
+    }
+    return `<div class="line">
+      <div class="t"><b>${esc(it['品項名稱'])}</b><i>${esc(it['規格'])}</i><em>$${Number(it['調撥單價']).toLocaleString('zh-TW')} · 小計 ${Number(it['小計']).toLocaleString('zh-TW')}</em></div>
+      ${body}${edit}</div>`;
+  }).join('');
+
+  let acts = '';
+  if (editing) {
+    acts = `<div class="acts">
+      <button class="btn line" id="cancelBtn">取消</button>
+      <button class="btn" id="submitBtn">${MODE === 'receive' ? '確認簽收' : '儲存修改'}</button></div>`;
+  } else {
+    const b = [];
+    if (canShip) b.push('<button class="btn line" id="editBtn">回去編輯</button>', '<button class="btn" id="shipBtn">確認出貨</button>');
+    if (canRecv) b.push('<button class="btn" id="recvBtn">簽收這批貨</button>');
+    if (!canRecv && canAmend) b.push('<button class="btn line" id="amendBtn">修改</button>');
+    if (b.length) acts = `<div class="acts">${b.join('')}</div>`;
+  }
+
+  const money = (v) => v === '' || v === null ? '—' : Number(v).toLocaleString('zh-TW');
+  $('p-doc').innerHTML = `
+    <div class="dochead">
+      <button class="back" id="backBtn">‹ 返回</button>
+      <div class="docno">${esc(d['單號'])}</div>
+      <div class="pill s${stIdx}">${esc(st)}</div>
+    </div>
+
+    <div class="card">
+      <div class="flow">${esc(shortOf(d['調出方']))} <span>→</span> ${esc(shortOf(d['調入方']))}</div>
+      <div class="steps">
+        ${step(0, '草稿', d['建立時間'])}${step(1, '已出貨', d['出貨時間'])}${step(2, '已簽收', d['簽收時間'])}
+      </div>
+      <dl class="kv">
+        <dt>調撥日期</dt><dd>${esc(d['調撥日期'])}</dd>
+        <dt>預計到貨</dt><dd>${esc(d['預計到貨日'])}</dd>
+        <dt>打包人</dt><dd>${esc(d['打包人']) || '—'}</dd>
+        <dt>簽收人</dt><dd>${esc(d['簽收人']) || '—'}</dd>
+        ${d['備註'] ? `<dt>備註</dt><dd>${esc(d['備註'])}</dd>` : ''}
+        <dt>應撥總額</dt><dd><b>${money(d['應撥總額'])}</b></dd>
+        ${d['實收總額'] !== '' ? `<dt>實收總額</dt><dd>${money(d['實收總額'])}</dd>
+        <dt>差異金額</dt><dd class="${Number(d['差異總額']) ? 'gap' : ''}">${money(d['差異總額'])}</dd>` : ''}
+      </dl>
+    </div>
+
+    <div class="card"><h2>品項 ${items.length} 項</h2>${rows}</div>
+    ${editing ? '<div class="msg" id="dmsg"></div>' : ''}
+    ${acts}
+
+    <div class="card"><h2>異動紀錄</h2><div class="logs">
+      ${logs.length ? logs.map((l) => `<div>${time(l['時間'])}　<b>${esc(l['動作'])}</b>${l['欄位'] ? '　' + esc(l['欄位']) + '：' + esc(l['原值']) + ' → ' + esc(l['新值']) : ''}　${esc(l['操作人'])}</div>`).join('')
+      : '<div>還沒有異動</div>'}
+    </div></div>`;
+
+  bindDocEvents();
+}
+
+function bindDocEvents() {
+  const on = (id, fn) => { const el = $(id); if (el) el.onclick = fn; };
+  on('backBtn', () => { MODE = ''; gotoPage(DOC_FROM); });
+  on('editBtn', () => reopen(DOC.doc['單號']));
+  on('shipBtn', () => act('ship'));
+  on('recvBtn', () => { MODE = 'receive'; renderDoc(); });
+  on('amendBtn', () => { MODE = 'amend'; renderDoc(); });
+  on('cancelBtn', () => { MODE = ''; renderDoc(); });
+  on('submitBtn', () => act(MODE));
+
+  // 選「其他」才開放填字；沒差異就把原因欄收起來
+  document.querySelectorAll('#p-doc .rr').forEach((sel) => {
+    const idx = sel.dataset.idx;
+    const it = DOC.items.find((x) => String(x['列序']) === idx);
+    sel.value = it['差異原因代碼'] || '';
+    const sync = () => {
+      const box = document.querySelector(`#p-doc .rc[data-idx="${idx}"]`);
+      if (box) box.style.display = sel.value === 'OTHER' ? '' : 'none';
+    };
+    sel.onchange = sync; sync();
+  });
+}
+
+function dsay(kind, text) {
+  const m = $('dmsg');
+  if (!m) return say(kind, text);
+  m.className = 'msg ' + kind;
+  m.textContent = text;
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+function readLines() {
+  return [...document.querySelectorAll('#p-doc .rq')].map((inp) => {
+    const idx = inp.dataset.idx;
+    const sel = document.querySelector(`#p-doc .rr[data-idx="${idx}"]`);
+    const cus = document.querySelector(`#p-doc .rx[data-idx="${idx}"]`);
+    return {
+      '列序': idx,
+      '實收數量': inp.value,
+      '差異原因代碼': sel ? sel.value : '',
+      '自訂原因': cus ? cus.value : ''
+    };
+  });
+}
+
+async function act(kind) {
+  const no = DOC.doc['單號'];
+  const who = me().name || '';
+  if (!who) { dsay('err', '請先到「我」設定你的名字，紀錄要記是誰做的。'); return; }
+
+  let res;
+  try {
+    if (kind === 'ship') {
+      res = await post('ship', { '單號': no, '操作人': who });
+    } else if (kind === 'receive') {
+      res = await post('receive', { '單號': no, '簽收人': who, lines: readLines() });
+    } else {
+      const changes = [];
+      readLines().forEach((l) => {
+        const it = DOC.items.find((x) => String(x['列序']) === l['列序']);
+        const oldQ = it['實收數量'] === '' || it['實收數量'] === null ? '' : String(it['實收數量']);
+        if (String(l['實收數量']) !== oldQ) changes.push({ path: `明細#${l['列序']}.實收數量`, value: l['實收數量'] });
+        const oldR = it['差異原因代碼'] || '';
+        if (l['差異原因代碼'] !== oldR) {
+          changes.push({ path: `明細#${l['列序']}.差異原因代碼`, value: l['差異原因代碼'], custom: l['自訂原因'] });
+        }
+      });
+      if (!changes.length) { dsay('err', '沒有改到任何東西。'); return; }
+      res = await post('amend', { '單號': no, '操作人': who, changes: changes });
+    }
+  } catch (err) {
+    dsay('err', '送不出去，可能是沒有網路，等一下再按一次。');
+    return;
+  }
+
+  if (!res.ok) { dsay('err', res.error + '　[' + res.code + ']'); return; }
+  MODE = '';
+  await refreshMemory();
+  await openDoc(no);
+  say('', '');
+}
+
+async function refreshMemory() {
+  try {
+    const b = await post('bootstrap', {});
+    if (b.ok) { MEM = b.data.items || []; REASONS = b.data.reasons || []; }
+  } catch (_) { /* 沒網路就沿用舊的記憶 */ }
+}
+
+// ── 啟動 ──────────────────────────────────────────────
+function gotoPage(p) {
+  document.querySelectorAll('nav button').forEach((x) => x.classList.toggle('on', x.dataset.p === p));
+  document.querySelectorAll('.page').forEach((s) => s.classList.toggle('on', s.id === 'p-' + p));
+  $('bar').style.display = p === 'new' ? '' : 'none';
+  window.scrollTo(0, 0);
+  if (p === 'todo') loadTodo();
+}
+document.querySelectorAll('nav button').forEach((b) => { b.onclick = () => gotoPage(b.dataset.p); });
+// ── 單據卡片列表（T4-2 / T4-3）────────────────────────
+const STIDX = { '草稿': 0, '已出貨': 1, '已簽收': 2 };
+
+function docCard(d) {
+  const gap = Number(d['差異總額']);
+  return `<button class="dc" data-no="${esc(d['單號'])}">
+    <div class="r1"><b>${esc(shortOf(d['調出方']))} → ${esc(shortOf(d['調入方']))}</b>
+      <div class="pill s${STIDX[d['狀態']] || 0}">${esc(d['狀態'])}</div></div>
+    <div class="r2">${esc(String(d['調撥日期']).slice(5))}　·　${d['品項數']} 項　·　<b>${Number(d['應撥總額']).toLocaleString('zh-TW')}</b>${gap ? `<span class="gap">差異 ${gap}</span>` : ''}</div>
+    <div class="r3">${esc(d['單號'])}</div>
+  </button>`;
+}
+
+function paintList(el, rows, emptyText) {
+  el.innerHTML = rows.length ? rows.map(docCard).join('') : `<div class="none">${emptyText}</div>`;
+  el.querySelectorAll('.dc').forEach((b) => { b.onclick = () => openDoc(b.dataset.no); });
+}
+
+async function loadTodo() {
+  const mine = me().node;
+  if (!mine) return;
+  const [recv, draft, ship] = await Promise.all([
+    post('listDocs', { '調入方': mine, '狀態': '已出貨', limit: 50 }),
+    post('listDocs', { '調出方': mine, '狀態': '草稿', limit: 50 }),
+    post('listDocs', { '調出方': mine, '狀態': '已出貨', limit: 50 })
+  ]);
+  const fill = (key, res, empty) => {
+    const rows = res.ok ? res.data.rows : [];
+    $('c-' + key).textContent = rows.length;
+    paintList($('l-' + key), rows, empty);
+  };
+  fill('recv', recv, '目前沒有等你簽收的貨');
+  fill('draft', draft, '目前沒有草稿');
+  fill('ship', ship, '目前沒有在路上的貨');
+}
+
+let QOFFSET = 0, QROWS = [];
+function qFilter() {
+  return {
+    '關鍵字': $('qno').value.trim(),
+    '起日': $('qfrom').value, '迄日': $('qto').value,
+    '節點': $('qnode').value, '狀態': $('qst').value,
+    limit: 20
+  };
+}
+async function runQuery(more) {
+  const box = $('qmsg');
+  box.className = 'msg';
+  if (!more) { QOFFSET = 0; QROWS = []; }
+  const res = await post('listDocs', Object.assign(qFilter(), { offset: QOFFSET }));
+  if (!res.ok) { box.className = 'msg err'; box.textContent = res.error; return; }
+  QROWS = QROWS.concat(res.data.rows);
+  QOFFSET = QROWS.length;
+  $('qlist').innerHTML = QROWS.length
+    ? `<div class="card"><h2>找到 ${res.data.total} 張</h2>${QROWS.map(docCard).join('')}
+       ${res.data.hasMore ? '<button class="btn line" id="qmore">載入更多</button>' : ''}</div>`
+    : '<div class="empty"><b>沒有符合的單據</b>換個條件試試。</div>';
+  $('qlist').querySelectorAll('.dc').forEach((b) => { b.onclick = () => openDoc(b.dataset.no); });
+  const m = $('qmore');
+  if (m) m.onclick = () => runQuery(true);
+}
+$('qbtn').onclick = () => runQuery(false);
+$('qclear').onclick = () => {
+  ['qno', 'qfrom', 'qto'].forEach((id) => { $(id).value = ''; });
+  $('qnode').value = ''; $('qst').value = '';
+  $('qlist').innerHTML = ''; $('qmsg').className = 'msg';
+};
+$('addBtn').onclick = () => { addItem(); saveLocal(); };
+$('saveBtn').onclick = save;
+['from', 'to', 'date', 'eta', 'packer', 'note'].forEach((id) =>
+  $(id).addEventListener('input', () => { if (id === 'from') paintNodes(); saveLocal(); }));
+$('myname').addEventListener('input', (e) => {
+  const v = e.target.value.trim();
+  setMe({ name: v });
+  // 還沒填打包人就順手帶進去，不覆蓋已經打好的名字
+  if (!$('packer').value.trim()) { $('packer').value = v; saveLocal(); }
+});
+
+(async function boot() {
+  let b;
+  try { b = await post('bootstrap', {}); } catch (_) { b = null; }
+  if (b && b.ok) {
+    NODES = b.data.nodes; MEM = b.data.items || []; REASONS = b.data.reasons || []; TODAY = b.data.today;
+  }
+  else {
+    // 離線時至少讓畫面撐得住；正確清單一定來自後端
+    NODES = [{ name: '中央廚房', short: '中央廚房', code: 'CK' }];
+    TODAY = new Date().toISOString().slice(0, 10);
+    say('err', '連不到後端，先用離線模式。填的東西會留在這台手機上。');
+  }
+
+  $('pick').innerHTML = NODES.map((n) => `<button data-node="${n.name}">${n.short}</button>`).join('');
+  $('pick').querySelectorAll('button').forEach((btn) => {
+    btn.onclick = () => {
+      const nm = btn.dataset.node;
+      setMe({ node: nm });
+      if (!editingNo) { $('from').value = nm; paintNodes(); saveLocal(); }
+    };
+  });
+  $('qnode').innerHTML = '<option value="">全部門市</option>' +
+    NODES.map((n) => `<option value="${n.name}">${n.short}</option>`).join('');
+
+  paintNodes();
+  paintMe();
+
+  let saved = null;
+  try { saved = JSON.parse(localStorage.getItem(K_DRAFT) || 'null'); } catch (_) { saved = null; }
+  if (saved) fillForm(saved); else resetForm();
+
+  // 還沒設定「我在哪一店」就先帶去設定頁
+  if (!me().node) document.querySelector('nav button[data-p="me"]').click();
+})();
+</script>
+</body>
+</html>
