@@ -42,6 +42,10 @@ input,select{width:100%;font:inherit;font-size:15px;color:var(--ink);background:
 input:focus,select:focus{outline:none;border-color:var(--accent)}
 .row{display:flex;gap:12px;align-items:end;flex-wrap:wrap}
 .row>div{flex:1;min-width:150px}
+/* 下載按鈕列：按鈕照自己的寬度排，不套 .row 的 min-width——
+   之前用 .row＋flex:0 包按鈕，包框被壓成 150px 但按鈕本體 258px，
+   溢出去疊到隔壁的「明細 CSV」（2026-07-29 Eason 實際看到重疊） */
+.btns{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:10px}
 button{font:inherit;cursor:pointer;border:0;border-radius:9px;padding:10px 18px;
        background:var(--accent);color:#fff;font-weight:600;white-space:nowrap}
 button.line{background:transparent;border:1px solid var(--line);color:var(--ink);font-weight:500}
@@ -267,19 +271,21 @@ function paintReport() {
     <div class="scroll"><table>${tableHtml(s.headers, s.rows, true, s.nodes)}</table></div>
     <p class="note">調出單數／調出總額有底線的數字可以點，會列出這一店調給了哪幾家門市、各幾張、各多少錢。</p>
     <div id="flow"></div>
-    <div class="row" style="margin-top:10px">
-      <div style="flex:0"><button id="dlx">下載 Excel（每個品牌一個分頁）</button></div>
-      <div style="flex:0"><button class="line sm" id="dl1">明細 CSV</button></div>
-      ${RPT.xlsxUrl ? `<div style="flex:0"><a href="${RPT.xlsxUrl}"><button class="line sm">整份試算表</button></a></div>` : ''}
+    <div class="btns">
+      <button id="dlx">下載 Excel（每個品牌一個分頁）</button>
+      <button class="line sm" id="dl1">明細 CSV（一列一個品項）</button>
+      ${RPT.xlsxUrl ? `<a href="${RPT.xlsxUrl}"><button class="line sm">整份試算表</button></a>` : ''}
     </div>
     <h3>逐張明細（${d.rows.length} 張）</h3>
     <div class="scroll"><table>${tableHtml(d.headers, d.rows, false)}</table></div>
     <p class="note">會計認的是<b>應撥總額</b>；實收總額與差異總額只是拿來追問題，不進帳。
-    <b>下載 Excel</b> 給的是 .xlsx，裡面有「彙總、全部明細、墨竹亭、一悟燒肉、小辛辣、鼎兆元總部」六個分頁；
+    <b>下載 Excel</b> 給的是 .xlsx，裡面有「彙總、全部明細、品項明細、墨竹亭、一悟燒肉、小辛辣、鼎兆元總部」七個分頁；
     每個品牌的分頁收的是「調出或調入其中一方是這個品牌」的單。
-    「明細 CSV」是單張表，已加 UTF-8 BOM，Excel 開不會亂碼。彙總的「↳ 調出至」子列在 Excel 的彙總分頁裡看得到。</p>`;
+    「明細 CSV」一列一個品項（品項、單價、數量、小計、實收、差異原因），已加 UTF-8 BOM，Excel 開不會亂碼。
+    彙總的「↳ 調出至」子列在 Excel 的彙總分頁裡看得到。</p>`;
   $('dlx').onclick = downloadXlsx;
-  $('dl1').onclick = () => csv(RPT.detail, `調撥月報_${RPT.ym}_明細.csv`);
+  // RPT.items 是 2026-07-29 之後的後端才有；舊後端先退回逐張表，不要讓按鈕壞掉
+  $('dl1').onclick = () => csv(RPT.items || RPT.detail, `調撥月報_${RPT.ym}_品項明細.csv`);
   $('rpt').querySelectorAll('a.flow').forEach((a) => { a.onclick = () => showFlow(a.dataset.node); });
 }
 
@@ -395,6 +401,8 @@ function reportSheets() {
     { name: '彙總', headers: RPT.summary.headers, rows: RPT.summary.expanded },
     { name: '全部明細', headers: H, rows: RPT.detail.rows }
   ];
+  // 一列一個品項的分頁（舊後端沒有 items 就略過，Excel 照樣能下載）
+  if (RPT.items) sheets.push({ name: '品項明細', headers: RPT.items.headers, rows: RPT.items.rows });
   brands.forEach((b) => {
     const rows = RPT.detail.rows.filter((r) => r[iOutBrand] === b || r[iInBrand] === b);
     sheets.push({ name: b, headers: H, rows: rows });
