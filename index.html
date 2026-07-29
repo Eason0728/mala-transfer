@@ -136,6 +136,7 @@ button{font:inherit;cursor:pointer}
 .btn:disabled{opacity:.45}
 .btn.ghost{background:transparent;border:1px dashed var(--line);color:var(--dim);font-weight:500}
 .btn.line{background:transparent;border:1px solid var(--line);color:var(--ink);font-weight:600}
+.btn.line.danger{color:var(--danger);border-color:rgba(201,97,95,.45)}
 
 /* ── 底部總額列 ─────────────────────────────────────── */
 .bar{
@@ -181,6 +182,7 @@ nav svg{width:22px;height:22px;stroke:currentColor;fill:none;stroke-width:1.7;st
 .docno{font-weight:800;font-size:15px;letter-spacing:.02em}
 .pill{margin-left:auto;font-size:12px;font-weight:700;border-radius:999px;padding:4px 11px;color:#fff;white-space:nowrap}
 .pill.s0{background:var(--draft)} .pill.s1{background:var(--review)} .pill.s2{background:var(--done)}
+.pill.s3{background:#6b7684}   /* 已刪除：灰，比草稿更沉 */
 .flow{display:flex;align-items:center;gap:6px;font-size:15px;font-weight:700;margin-bottom:4px}
 .flow span{color:var(--dim);font-weight:400}
 .kv{display:grid;grid-template-columns:auto 1fr;gap:5px 14px;font-size:14px;margin-top:12px}
@@ -304,7 +306,7 @@ nav svg{width:22px;height:22px;stroke:currentColor;fill:none;stroke-width:1.7;st
         <div class="two">
           <div class="f"><label>門市（調出或調入）</label><select id="qnode"></select></div>
           <div class="f"><label>狀態</label><select id="qst">
-            <option value="">全部</option><option>草稿</option><option>已出貨</option><option>已簽收</option>
+            <option value="">全部</option><option>草稿</option><option>已出貨</option><option>已簽收</option><option>已刪除</option>
           </select></div>
         </div>
         <div class="acts"><button class="btn line" id="qclear">清空條件</button><button class="btn" id="qbtn">查詢</button></div>
@@ -697,16 +699,20 @@ async function openDoc(no, mode) {
 function renderDoc() {
   const d = DOC.doc, items = DOC.items, logs = DOC.logs;
   const st = String(d['狀態']);
-  const stIdx = { '草稿': 0, '已出貨': 1, '已簽收': 2 }[st] || 0;
+  const stIdx = { '草稿': 0, '已出貨': 1, '已簽收': 2, '已刪除': 3 }[st] || 0;
   const mine = me().node;
   const canShip = st === '草稿' && mine === d['調出方'];
   const canRecv = st === '已出貨' && mine === d['調入方'];
-  const canAmend = st !== '草稿';
+  // 已簽收即鎖定（Eason 2026-07-29 推翻「簽收後仍可修改」），只有已出貨能修改
+  const canAmend = st === '已出貨';
+  const canDelete = st !== '已刪除';   // 所有單據都有刪除選項（軟刪除，會留紀錄）
   const editing = MODE === 'receive' || MODE === 'amend';
 
   const time = (v) => v ? String(v).slice(5, 16).replace('T', ' ') : '';
+  // 已刪除的單：進度條照它刪除前走到哪裡畫，不然 stIdx=3 會把三步全點亮
+  const progIdx = st === '已刪除' ? (d['簽收時間'] ? 2 : d['出貨時間'] ? 1 : 0) : stIdx;
   const step = (i, label, ts) =>
-    `<div class="${stIdx >= i ? 'done' : ''}">${label}<b>${time(ts)}</b></div>`;
+    `<div class="${progIdx >= i ? 'done' : ''}">${label}<b>${time(ts)}</b></div>`;
 
   const rows = items.map((it) => {
     const plan = Number(it['應撥數量']) || 0;
@@ -748,6 +754,7 @@ function renderDoc() {
     if (canShip) b.push('<button class="btn line" id="editBtn">回去編輯</button>', '<button class="btn" id="shipBtn">確認出貨</button>');
     if (canRecv) b.push('<button class="btn" id="recvBtn">簽收這批貨</button>');
     if (!canRecv && canAmend) b.push('<button class="btn line" id="amendBtn">修改</button>');
+    if (canDelete) b.push('<button class="btn line danger" id="delBtn">刪除</button>');
     if (b.length) acts = `<div class="acts">${b.join('')}</div>`;
   }
 
@@ -795,6 +802,10 @@ function bindDocEvents() {
   on('shipBtn', () => act('ship'));
   on('recvBtn', () => { MODE = 'receive'; renderDoc(); });
   on('amendBtn', () => { MODE = 'amend'; renderDoc(); });
+  on('delBtn', () => {
+    // 軟刪除：單據會標成「已刪除」留在系統上（誰刪的記在異動紀錄），月報與待辦不再計入
+    if (confirm(`確定刪除 ${DOC.doc['單號']}？\n\n單據不會消失：會標成「已刪除」留在紀錄裡，查單找得到，但月報不再計入。`)) act('delete');
+  });
   on('cancelBtn', () => { MODE = ''; renderDoc(); });
   on('submitBtn', () => act(MODE));
 
@@ -842,6 +853,8 @@ async function act(kind) {
   try {
     if (kind === 'ship') {
       res = await post('ship', { '單號': no, '操作人': who });
+    } else if (kind === 'delete') {
+      res = await post('deleteDoc', { '單號': no, '操作人': who });
     } else if (kind === 'receive') {
       res = await post('receive', { '單號': no, '簽收人': who, lines: readLines() });
     } else {
@@ -887,7 +900,7 @@ function gotoPage(p) {
 }
 document.querySelectorAll('nav button').forEach((b) => { b.onclick = () => gotoPage(b.dataset.p); });
 // ── 單據卡片列表（T4-2 / T4-3）────────────────────────
-const STIDX = { '草稿': 0, '已出貨': 1, '已簽收': 2 };
+const STIDX = { '草稿': 0, '已出貨': 1, '已簽收': 2, '已刪除': 3 };
 
 function docCard(d) {
   const gap = Number(d['差異總額']);
