@@ -265,16 +265,12 @@ function showFlow(node) {
 
 function paintReport() {
   const d = RPT.detail, s = RPT.summary;
-  // 畫面上的彙總不顯示這三欄（Eason 2026-07-31）；資料照算，Excel／CSV／試算表分頁都還在，
-  // 會計要追差異時下載就有
-  const HIDE = ['淨額（調入−調出）', '差異總額', '有差異的單數'];
-  const keep = s.headers.map((h, i) => HIDE.indexOf(h) < 0 ? i : -1).filter((i) => i >= 0);
-  const sHeaders = keep.map((i) => s.headers[i]);
-  const sRows = s.rows.map((r) => keep.map((i) => r[i]));
+  // 彙總沒有淨額／差異總額／有差異的單數三欄（Eason 2026-07-30：畫面與下載一致）——
+  // 是後端 RPT_SUM_HEAD 就不產，不是前端藏；要恢復去改 Code.gs
   $('rpt').innerHTML = `
     ${matrixHtml()}
     <h3>每店進出彙總（${esc(RPT.ym)}）</h3>
-    <div class="scroll"><table>${tableHtml(sHeaders, sRows, true, s.nodes)}</table></div>
+    <div class="scroll"><table>${tableHtml(s.headers, s.rows, true, s.nodes)}</table></div>
     <p class="note">調出單數／調出總額有底線的數字可以點，會列出這一店調給了哪幾家門市、各幾張、各多少錢。</p>
     <div id="flow"></div>
     <div class="btns">
