@@ -114,6 +114,11 @@ select{background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/
 }
 .item .del:active{background:var(--line)}
 .item .nmwrap{position:relative;margin-bottom:10px;padding-right:34px}
+/* 類別二選一（食材／包材，Eason 2026-07-31）：做成兩顆大按鈕，店員戴手套也點得到 */
+.cats{display:flex;gap:8px}
+.cats button{flex:1;font:inherit;font-size:14px;padding:9px 0;border-radius:10px;
+  border:1px solid var(--line);background:var(--panel);color:var(--dim);cursor:pointer}
+.cats button.on{border-color:var(--accent);color:var(--accent);background:var(--accent-soft);font-weight:700}
 .sub{text-align:right;font-size:13px;color:var(--dim);margin-top:8px}
 .sub b{color:var(--ink);font-size:15px}
 .cands{
@@ -449,6 +454,13 @@ function addItem(v) {
       <input class="nm" autocomplete="off" placeholder="打字會帶出用過的品項">
       <div class="cands"></div>
     </div>
+    <div class="f">
+      <label>類別</label>
+      <div class="cats">
+        <button type="button" data-v="食材">食材</button>
+        <button type="button" data-v="包材">包材</button>
+      </div>
+    </div>
     <div class="two">
       <div class="f"><label>規格（選填）</label><input class="sp" placeholder="500g"></div>
       <div class="f"><label>單位（選填）</label><input class="un" placeholder="包"></div>
@@ -464,6 +476,16 @@ function addItem(v) {
   q('.nm').value = v.name || ''; q('.sp').value = v.spec || '';
   q('.un').value = v.unit || ''; q('.pr').value = v.price != null ? v.price : '';
   q('.qt').value = v.qty != null ? v.qty : '';
+
+  // 類別二選一，沒選（含舊草稿）一律當食材——跟後端 normCat_ 同一條規則
+  const setCat = (val) => {
+    d.dataset.cat = val;
+    d.querySelectorAll('.cats button').forEach((b) => b.classList.toggle('on', b.dataset.v === val));
+  };
+  setCat(v.cat === '包材' ? '包材' : '食材');
+  d.querySelectorAll('.cats button').forEach((b) => {
+    b.onclick = () => { setCat(b.dataset.v); saveLocal(); };
+  });
 
   q('.del').onclick = () => { d.remove(); ensureOne(); calc(); saveLocal(); };
   d.querySelectorAll('input').forEach((i) => i.addEventListener('input', () => {
@@ -486,6 +508,7 @@ function addItem(v) {
         const h = hits[i];
         q('.nm').value = h.name; q('.sp').value = h.spec || ''; q('.un').value = h.unit || '';
         if (!q('.pr').value) q('.pr').value = h.price != null ? h.price : '';
+        setCat(h.cat === '包材' ? '包材' : '食材');   // 記憶帶出類別，帶出來仍可改
         hide(); calc(); saveLocal();
       };
     });
@@ -505,7 +528,8 @@ function readItems() {
     spec: d.querySelector('.sp').value.trim(),
     unit: d.querySelector('.un').value.trim(),
     price: d.querySelector('.pr').value,
-    qty: d.querySelector('.qt').value
+    qty: d.querySelector('.qt').value,
+    cat: d.dataset.cat || '食材'
   }));
 }
 
@@ -630,7 +654,7 @@ async function save() {
       '打包人': f.packer.trim(), '備註': f.note.trim()
     },
     items: f.items.map((i) => ({
-      '品項名稱': i.name, '規格': i.spec, '單位': i.unit,
+      '品項名稱': i.name, '規格': i.spec, '單位': i.unit, '類別': i.cat || '食材',
       '調撥單價': i.price === '' ? '' : Number(i.price),
       '應撥數量': i.qty === '' ? '' : Number(i.qty)
     })),
@@ -667,7 +691,8 @@ async function reopen(no) {
     editingNo: no, from: d['調出方'], to: d['調入方'], date: d['調撥日期'], eta: d['預計到貨日'],
     packer: d['打包人'], note: d['備註'],
     items: res.data.items.map((i) => ({
-      name: i['品項名稱'], spec: i['規格'], unit: i['單位'], price: i['調撥單價'], qty: i['應撥數量']
+      name: i['品項名稱'], spec: i['規格'], unit: i['單位'], price: i['調撥單價'], qty: i['應撥數量'],
+      cat: i['類別']
     }))
   });
   saveLocal();
@@ -740,7 +765,7 @@ function renderDoc() {
         <input class="rx" data-idx="${idx}" maxlength="20" placeholder="原因限 20 字，例：司機少搬一箱"></div>`;
     }
     return `<div class="line">
-      <div class="t"><b>${esc(it['品項名稱'])}</b><i>${esc(it['規格'])}</i><em>$${Number(it['調撥單價']).toLocaleString('zh-TW')} · 小計 ${Number(it['小計']).toLocaleString('zh-TW')}</em></div>
+      <div class="t"><b>${esc(it['品項名稱'])}</b><i>${esc([it['類別'] || '食材', it['規格']].filter(Boolean).join(' · '))}</i><em>$${Number(it['調撥單價']).toLocaleString('zh-TW')} · 小計 ${Number(it['小計']).toLocaleString('zh-TW')}</em></div>
       ${body}${edit}</div>`;
   }).join('');
 
