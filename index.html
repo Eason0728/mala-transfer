@@ -271,7 +271,9 @@ nav svg{width:22px;height:22px;stroke:currentColor;fill:none;stroke-width:1.7;st
           <div class="f"><label>調撥日期<span class="req">＊</span></label><input id="date" type="date"></div>
           <div class="f"><label>預計到貨日<span class="req">＊</span></label><input id="eta" type="date"></div>
         </div>
-        <div class="f"><label>打包人<span class="req">＊</span></label><input id="packer" placeholder="誰打包的"></div>
+        <!-- 打包人＝「我」分頁的名字（Eason 2026-07-31），這裡只顯示不打字，點了直接跳去設定 -->
+        <div class="f"><label>打包人<span class="req">＊</span>（＝「我」的名字）</label>
+          <input id="packer" readonly placeholder="還沒設定，點這裡去「我」填名字"></div>
         <div class="f"><label>備註（選填）</label><input id="note" placeholder="例如：第二批、司機小陳帶"></div>
         <p class="note">標<span class="req">＊</span>的都要填，只有備註可以空著。</p>
       </div>
@@ -333,7 +335,7 @@ nav svg{width:22px;height:22px;stroke:currentColor;fill:none;stroke-width:1.7;st
       <div class="card">
         <h2>我的名字</h2>
         <div class="f"><input id="myname" placeholder="例如：阿明"></div>
-        <p class="note">開單時會自動填進「打包人」，不用每次重打。</p>
+        <p class="note">開單的「打包人」就是這個名字（打包人＝我的名字，不用另外填）。</p>
       </div>
     </section>
   </main>
@@ -562,7 +564,7 @@ function fillForm(f) {
   if (f.to) $('to').value = f.to;
   $('date').value = f.date || TODAY;
   $('eta').value = f.eta || f.date || TODAY;
-  $('packer').value = f.packer || '';
+  $('packer').value = me().name || f.packer || '';   // 打包人＝我的名字；舊草稿存過別的名字時才沿用
   $('note').value = f.note || '';
   $('items').innerHTML = '';
   (f.items && f.items.length ? f.items : [{}]).forEach(addItem);
@@ -609,7 +611,7 @@ function validateForm() {
   clearBad();
   const miss = [];
   [['from', '調出方'], ['to', '調入方'], ['date', '調撥日期'],
-    ['eta', '預計到貨日'], ['packer', '打包人']].forEach(([id, label]) => {
+    ['eta', '預計到貨日'], ['packer', '打包人（到「我」分頁填名字）']].forEach(([id, label]) => {
     if (!$(id).value.trim()) { $(id).classList.add('bad'); miss.push(label); }
   });
   // 日期關係也在這裡先擋，不然要送到後端才知道（規則跟後端同一條）
@@ -662,16 +664,18 @@ async function save() {
   };
   if (editingNo) payload['單號'] = editingNo;
 
-  $('saveBtn').disabled = true;
+  const sb = $('saveBtn'), sbOld = sb.textContent;
+  sb.disabled = true;
+  sb.textContent = '存檔中…';   // 後端一趟要一兩秒，按下去立刻給反應，免得同仁以為沒按到
   let res;
   try {
     res = await post(editingNo ? 'updateDraft' : 'createDraft', payload);
   } catch (err) {
-    $('saveBtn').disabled = false;
+    sb.disabled = false; sb.textContent = sbOld;
     saveLocal();   // 斷網：資料留著，等一下可以再按一次
     return say('err', '送不出去，可能是沒有網路。<br>你填的東西還在，恢復連線後再按一次就好。');
   }
-  $('saveBtn').disabled = false;
+  sb.disabled = false; sb.textContent = sbOld;
 
   if (!res.ok) { saveLocal(); return say('err', res.error + '　<small>[' + res.code + ']</small>'); }
 
@@ -973,7 +977,14 @@ async function runQuery(more) {
   const box = $('qmsg');
   box.className = 'msg';
   if (!more) { QOFFSET = 0; QROWS = []; }
-  const res = await post('listDocs', Object.assign(qFilter(), { offset: QOFFSET }));
+  // 後端一趟要一兩秒，按下去的瞬間就要讓人知道「有在跑」，不然會以為沒按到再按一次
+  const btn = more ? $('qmore') : $('qbtn');
+  const old = btn.textContent;
+  btn.disabled = true; btn.textContent = '查詢中…';
+  let res;
+  try { res = await post('listDocs', Object.assign(qFilter(), { offset: QOFFSET })); }
+  catch (err) { res = { ok: false, error: '送不出去，可能是沒有網路，等一下再按一次。' }; }
+  btn.disabled = false; btn.textContent = old;
   if (!res.ok) { box.className = 'msg err'; box.textContent = res.error; return; }
   QROWS = QROWS.concat(res.data.rows);
   QOFFSET = QROWS.length;
@@ -1002,9 +1013,11 @@ $('saveBtn').onclick = save;
 $('myname').addEventListener('input', (e) => {
   const v = e.target.value.trim();
   setMe({ name: v });
-  // 還沒填打包人就順手帶進去，不覆蓋已經打好的名字
-  if (!$('packer').value.trim()) { $('packer').value = v; saveLocal(); }
+  // 打包人＝我的名字（Eason 2026-07-31）：一律跟著改，不再是「空的才帶入」
+  $('packer').value = v; saveLocal();
 });
+// 打包人欄位是唯讀的，點了直接跳去「我」填名字
+$('packer').addEventListener('click', () => { gotoPage('me'); $('myname').focus(); });
 
 (async function boot() {
   let b;
