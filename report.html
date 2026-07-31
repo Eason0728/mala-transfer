@@ -493,16 +493,57 @@ function paintAdmin(data) {
 function paintMem() {
   const f = $('mbrand').value;
   const list = ADM.items.filter((i) => !f || i.brand === f);
+  // 名稱／規格／單位做成可編輯的欄位（Eason 2026-07-31）；最近單價與用過幾次是系統累積的，只顯示不給改
   $('mtab').innerHTML = `<thead><tr><th>品牌</th><th>品項</th><th>規格</th><th>單位</th><th class="n">最近單價</th><th class="n">用過幾次</th><th></th></tr></thead>
-    <tbody>${list.length ? list.map((i) => `<tr>
-      <td>${esc(i.brand)}</td><td>${esc(i.name)}</td><td>${esc(i.spec)}</td><td>${esc(i.unit)}</td>
+    <tbody>${list.length ? list.map((i, k) => `<tr>
+      <td>${esc(i.brand)}</td>
+      <td><input class="me-name" data-k="${k}" value="${esc(i.name)}" style="min-width:120px"></td>
+      <td><input class="me-spec" data-k="${k}" value="${esc(i.spec)}" style="min-width:90px"></td>
+      <td><input class="me-unit" data-k="${k}" value="${esc(i.unit)}" style="min-width:70px"></td>
       <td class="n">${n2(i.price)}</td><td class="n">${i.uses}</td>
-      <td><button class="sm line mdel" data-brand="${esc(i.brand)}" data-name="${esc(i.name)}">刪除</button></td>
+      <td style="white-space:nowrap">
+        <button class="sm line msave" data-k="${k}">儲存</button>
+        <button class="sm line mdel" data-k="${k}">刪除</button></td>
     </tr>`).join('') : '<tr><td colspan="7">還沒有品項記憶</td></tr>'}</tbody>`;
+
+  const rowOf = (b) => list[Number(b.dataset.k)];
+  const val = (cls, k) => $('mtab').querySelector(`.${cls}[data-k="${k}"]`).value.trim();
+
+  $('mtab').querySelectorAll('.msave').forEach((b) => {
+    b.onclick = () => {
+      const i = rowOf(b), k = b.dataset.k;
+      const newName = val('me-name', k), spec = val('me-spec', k), unit = val('me-unit', k);
+      if (!newName) return show($('amsg'), 'err', '品項名稱不能空白。');
+      // 沒改就不要白跑一趟後端
+      if (newName === i.name && spec === i.spec && unit === i.unit) {
+        return show($('amsg'), 'ok', '沒有改到任何東西。');
+      }
+      b.disabled = true;                      // 後端一趟一兩秒，先鎖住免得連按
+      const old = b.textContent; b.textContent = '儲存中…';
+      adm({ op: 'memoryEdit', brand: i.brand, name: i.name, newName: newName, spec: spec, unit: unit },
+        '已更新，舊單不受影響（記憶只是下次開單的自動帶入來源）',
+        () => { b.disabled = false; b.textContent = old; })
+        .then((res) => {
+          // 被擋下來（例如撞名）時把欄位還原成後端的真實值——留著沒存進去的字
+          // 會看起來像已經改好了，甚至像有兩筆同名（成功時整張表會重畫，不用還原）
+          if (res && res.ok) return;
+          const row = $('mtab');
+          if (!row) return;
+          const nEl = row.querySelector(`.me-name[data-k="${k}"]`);
+          const sEl = row.querySelector(`.me-spec[data-k="${k}"]`);
+          const uEl = row.querySelector(`.me-unit[data-k="${k}"]`);
+          if (nEl) nEl.value = i.name;
+          if (sEl) sEl.value = i.spec;
+          if (uEl) uEl.value = i.unit;
+        });
+    };
+  });
+
   $('mtab').querySelectorAll('.mdel').forEach((b) => {
     b.onclick = () => {
-      if (!confirm(`刪掉「${b.dataset.brand} / ${b.dataset.name}」的記憶？舊單不受影響。`)) return;
-      adm({ op: 'memoryDelete', brand: b.dataset.brand, name: b.dataset.name }, '已刪除');
+      const i = rowOf(b);
+      if (!confirm(`刪掉「${i.brand} / ${i.name}」的記憶？舊單不受影響。`)) return;
+      adm({ op: 'memoryDelete', brand: i.brand, name: i.name }, '已刪除');
     };
   });
 }
@@ -510,13 +551,22 @@ $('mbrand').onchange = paintMem;
 
 // bindAdmin 隨差異原因清單一起移除（2026-07-31）
 
-async function adm(payload, okText, after) {
-  const res = await post('adminUpdate', Object.assign({ pin_master: PIN }, payload));
-  if (!res.ok) return show($('amsg'), 'err', res.error);
-  if (after) after();
+/** done：成功或失敗都會呼叫（用來解鎖按鈕），別放只有成功才該做的事 */
+async function adm(payload, okText, done) {
+  let res;
+  try {
+    res = await post('adminUpdate', Object.assign({ pin_master: PIN }, payload));
+  } catch (err) {
+    if (done) done();
+    show($('amsg'), 'err', '送不出去，可能是沒有網路，等一下再按一次。');
+    return { ok: false };
+  }
+  if (done) done();
+  if (!res.ok) { show($('amsg'), 'err', res.error); return res; }
   const d = await post('adminData', { pin_master: PIN });
   if (d.ok) paintAdmin(d.data);
   show($('amsg'), 'ok', okText + (res.data && res.data.moved ? `（搬了 ${res.data.moved} 筆明細）` : ''));
+  return res;
 }
 
 // ── 啟動 ──────────────────────────────────────────────

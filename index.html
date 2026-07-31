@@ -272,9 +272,9 @@ nav svg{width:22px;height:22px;stroke:currentColor;fill:none;stroke-width:1.7;st
           <div class="f"><label>調撥日期<span class="req">＊</span></label><input id="date" type="date"></div>
           <div class="f"><label>預計到貨日<span class="req">＊</span></label><input id="eta" type="date"></div>
         </div>
-        <!-- 打包人＝「我」分頁的名字（Eason 2026-07-31），這裡只顯示不打字，點了直接跳去設定 -->
-        <div class="f"><label>打包人<span class="req">＊</span>（＝「我」的名字）</label>
-          <input id="packer" readonly placeholder="還沒設定，點這裡去「我」填名字"></div>
+        <!-- 打包人＝「店別」分頁的名字（Eason 2026-07-31），這裡只顯示不打字，點了直接跳去設定 -->
+        <div class="f"><label>打包人<span class="req">＊</span>（＝「店別」裡的名字）</label>
+          <input id="packer" readonly placeholder="還沒設定，點這裡去「店別」填名字"></div>
         <div class="f"><label>備註（選填）</label><input id="note" placeholder="例如：第二批、司機小陳帶"></div>
         <p class="note">標<span class="req">＊</span>的都要填，只有備註可以空著。</p>
       </div>
@@ -326,7 +326,7 @@ nav svg{width:22px;height:22px;stroke:currentColor;fill:none;stroke-width:1.7;st
     <!-- 單據詳情（不在頁籤上，從查單或存檔訊息進來）-->
     <section class="page" id="p-doc"></section>
 
-    <!-- ④ 我 -->
+    <!-- ④ 店別（原本叫「我」，Eason 2026-07-31 改名；頁面 id 沿用 me 不動，改 id 會牽動所有 gotoPage 呼叫）-->
     <section class="page" id="p-me">
       <div class="card">
         <h2>我在哪一店</h2>
@@ -354,7 +354,7 @@ nav svg{width:22px;height:22px;stroke:currentColor;fill:none;stroke-width:1.7;st
     <button class="on" data-p="new"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>開單</button>
     <button data-p="todo"><svg viewBox="0 0 24 24"><path d="M9 11l3 3 8-8M20 12v6a2 2 0 01-2 2H6a2 2 0 01-2-2V6a2 2 0 012-2h9"/></svg>待辦</button>
     <button data-p="find"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>查單</button>
-    <button data-p="me"><svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="3.5"/><path d="M5 20c0-3.3 3.1-6 7-6s7 2.7 7 6"/></svg>我</button>
+    <button data-p="me"><svg viewBox="0 0 24 24"><path d="M4 9h16M4 9l1.5-4h13L20 9M5 9v10a1 1 0 001 1h12a1 1 0 001-1V9M9 20v-6h6v6"/></svg>店別</button>
   </div>
 </nav>
 
@@ -627,7 +627,7 @@ function validateForm() {
   clearBad();
   const miss = [];
   [['from', '調出方'], ['to', '調入方'], ['date', '調撥日期'],
-    ['eta', '預計到貨日'], ['packer', '打包人（到「我」分頁填名字）']].forEach(([id, label]) => {
+    ['eta', '預計到貨日'], ['packer', '打包人（到「店別」分頁填名字）']].forEach(([id, label]) => {
     if (!$(id).value.trim()) { $(id).classList.add('bad'); miss.push(label); }
   });
   // 日期關係也在這裡先擋，不然要送到後端才知道（規則跟後端同一條）
@@ -896,7 +896,7 @@ const ACT_BUSY = { ship: '出貨中…', receive: '簽收中…', delete: '刪�
 async function act(kind) {
   const no = DOC.doc['單號'];
   const who = me().name || '';
-  if (!who) { dsay('err', '請先到「我」設定你的名字，紀錄要記是誰做的。'); return; }
+  if (!who) { dsay('err', '請先到「店別」設定你的名字，紀錄要記是誰做的。'); return; }
 
   // 這一頁上所有動作鈕一起鎖：出貨到一半又按刪除會做出兩件事
   const btns = [...document.querySelectorAll('#p-doc .acts .btn')];
@@ -1050,7 +1050,7 @@ $('myname').addEventListener('input', (e) => {
   // 打包人＝我的名字（Eason 2026-07-31）：一律跟著改，不再是「空的才帶入」
   $('packer').value = v; saveLocal();
 });
-// 打包人欄位是唯讀的，點了直接跳去「我」填名字
+// 打包人欄位是唯讀的，點了直接跳去「店別」填名字
 $('packer').addEventListener('click', () => { gotoPage('me'); $('myname').focus(); });
 
 (async function boot() {
