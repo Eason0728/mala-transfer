@@ -272,7 +272,8 @@ nav svg{width:22px;height:22px;stroke:currentColor;fill:none;stroke-width:1.7;st
       <!-- ① 登入 -->
       <div id="g-login">
         <p class="gsub">請選你的門市並輸入密碼</p>
-        <div class="f"><label>門市</label><select id="gnode"></select></div>
+        <div class="f"><label>門市</label>
+          <select id="gnode"><option value="">載入中…</option></select></div>
         <div class="f"><label>密碼</label>
           <input id="gpin" type="password" inputmode="numeric" autocomplete="off" placeholder="預設 0000"></div>
         <div class="msg" id="gmsg2"></div>
@@ -303,6 +304,28 @@ nav svg{width:22px;height:22px;stroke:currentColor;fill:none;stroke-width:1.7;st
       </div>
     </div>
   </div>
+
+  <script>
+  /**
+   * ⚠️ 這段是**同步**的，故意放在這裡（閘門的 HTML 之後、app 之前）。
+   * 登入狀態存在 localStorage，讀它不用等網路；而 boot() 要先 await bootstrap（打後端一兩秒），
+   * 排在那之後才蓋閘門的話，同仁會先看到開單頁再被踢回登入——Eason 2026-07-31 回報的閃頁就是這個。
+   * 這裡只做「要不要蓋、蓋哪一關」，真正的驗證仍然在後端。
+   */
+  (function () {
+    var a = null;
+    try { a = JSON.parse(localStorage.getItem('mala_transfer_auth') || 'null'); } catch (e) { a = null; }
+    var logged = !!(a && a.v === 1 && a.node && a.token);
+    if (logged && a.name) return;                 // 三關都過過了，直接進 app
+    document.getElementById('gate').classList.remove('hide');
+    document.body.style.overflow = 'hidden';
+    // 登入過但還沒填名字 → 直接顯示填名字那一關，不要先閃一下登入畫面
+    if (logged && !a.name) {
+      document.getElementById('g-login').classList.add('hide');
+      document.getElementById('g-name').classList.remove('hide');
+    }
+  })();
+  </script>
 
   <header>
     <div class="hbar">
@@ -786,7 +809,7 @@ function showGate(which, msg) {
   const gate = $('gate');
   if (!which) {
     gate.classList.add('hide');
-    document.body.style.overflow = '';
+    document.body.style.overflow = '';   // 與頁首那段同步腳本設的值對應
     return;
   }
   gate.classList.remove('hide');
