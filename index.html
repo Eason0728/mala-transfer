@@ -83,6 +83,15 @@ a.btn.guide{display:block;text-align:center;text-decoration:none;color:var(--acc
   border-radius:999px;padding:3px 9px;font-weight:600;white-space:nowrap;
 }
 
+/* ── 逾期橫幅（Eason 2026-07-31）───────────────────────
+   用既有的 --danger 紅，不另發明色票；點了跳待辦頁找逾期的單 */
+.overdue{
+  background:var(--danger);color:#fff;padding:10px 16px;font-size:13px;font-weight:700;
+  cursor:pointer;line-height:1.5;
+}
+.overdue.hide{display:none}
+.overdue small{display:block;font-weight:500;opacity:.92;font-size:12px;margin-top:2px}
+
 /* ── 頁面 ───────────────────────────────────────────── */
 main{padding:16px}
 .page{display:none}
@@ -286,6 +295,8 @@ nav svg{width:22px;height:22px;stroke:currentColor;fill:none;stroke-width:1.7;st
         <!-- 會計沒有門市帳號，所以入口一定要放在登入頁：否則會計得先借某店的密碼登入
              才看得到 app 抬頭那個連結（2026-07-31 加登入後造成的死路）-->
         <p class="gfoot">會計對帳請走 <a href="report.html">會計專區 ›</a></p>
+        <!-- 只想查單不開單：免登入，帶檢視碼即可查（Eason 2026-07-31 裁決，讀取憑證三擇一）-->
+        <p class="gfoot"><a id="skipLoginBtn">只想查單？略過登入 ›</a></p>
       </div>
 
       <!-- ② 強制改密碼（密碼還是 0000 時） -->
@@ -307,6 +318,18 @@ nav svg{width:22px;height:22px;stroke:currentColor;fill:none;stroke-width:1.7;st
         <button class="btn" id="gnameBtn">確認</button>
         <p class="note">填了就鎖住不能改。填錯了要登出重新登入。</p>
       </div>
+    </div>
+  </div>
+
+  <!-- 輕量輸入框（風格照登入閘門）：未登入查資料要的檢視碼、刪已簽收單要的會計密碼共用（Eason 2026-07-31）-->
+  <div class="gate hide" id="inputGate" style="z-index:110">
+    <div class="gbox">
+      <h1 class="gtitle" id="inputTitle">輸入檢視碼</h1>
+      <p class="gsub" id="inputSub">要查看資料請先輸入檢視碼</p>
+      <div class="f"><input id="inputField" type="password" inputmode="numeric" autocomplete="off"></div>
+      <div class="msg" id="inputMsg"></div>
+      <button class="btn" id="inputOkBtn">確定</button>
+      <button class="btn ghost" id="inputCancelBtn" style="margin-top:8px">取消</button>
     </div>
   </div>
 
@@ -348,6 +371,12 @@ nav svg{width:22px;height:22px;stroke:currentColor;fill:none;stroke-width:1.7;st
     </div>
     </div>
   </header>
+
+  <!-- 逾期橫幅（Eason 2026-07-31）：已登入才查，逾期才顯示；查詢失敗就靜默不顯示，不擋操作、不跳錯誤 -->
+  <div class="overdue hide" id="overdueBar">
+    <b id="overdueMain"></b>
+    <small id="overdueSub"></small>
+  </div>
 
   <main>
     <!-- ① 開單 -->
@@ -474,6 +503,9 @@ nav svg{width:22px;height:22px;stroke:currentColor;fill:none;stroke-width:1.7;st
 const API = 'https://script.google.com/macros/s/AKfycbxRqci1Cnu92TKoAfYIpDxDfxjGF3_ENrjQL1yurnkxOwZz9MyM9Eu9grIcdeKjbs8-/exec';
 const K_DRAFT = 'mala_transfer_draft';
 const K_ME = 'mala_transfer_me';
+// 換店偵測用（Eason 2026-07-31）：**不能**沿用 K_ME，登出會把 K_ME 清掉（見 logoutBtn），
+// 這個鍵故意在登出時留著，才記得住「上一次登入是哪一店」，換人換店登入時才抓得到。
+const K_LAST_NODE = 'mala_transfer_last_node';
 
 // NODES 是 [{name, short, code}]，全名進資料庫、短名給手機畫面用
 let NODES = [], MEM = [], REASONS = [], TODAY = '', editingNo = '';
@@ -498,35 +530,64 @@ const brandMemory = () => MEM;
 
 const K_AUTH = 'mala_transfer_auth';
 const AUTH_V = 1;
+const K_VIEW = 'mala_transfer_view';   // 未登入時的檢視碼（讀取 API 三擇一憑證之一，Eason 2026-07-31）
 
 const $ = (id) => document.getElementById(id);
 // iframe／無痕／file:// 有時會擋 localStorage，擋了就當作沒存，不要讓整個 app 掛掉
 const lsSet = (k, v) => { try { localStorage.setItem(k, v); } catch (_) { /* 存不了就算了 */ } };
 const lsDel = (k) => { try { localStorage.removeItem(k); } catch (_) { /* 同上 */ } };
 const money = (n) => (Math.round(n * 100) / 100).toLocaleString('zh-TW');
+// 檢視碼**絕對不能寫死在這支檔案裡**（會進公開 repo）：只能來自使用者輸入，存 localStorage 帶著走
+const viewCode = () => { try { return localStorage.getItem(K_VIEW) || ''; } catch (_) { return ''; } };
+const setViewCode = (v) => lsSet(K_VIEW, v);
+const clearViewCode = () => lsDel(K_VIEW);
 
 // 需要帶 token 的寫入 action（與後端 spec §4.3 同一份名單）
 const AUTH_ACTIONS = ['createDraft', 'updateDraft', 'ship', 'receive', 'amend', 'deleteDoc'];
+// 讀取 action：已登入自動帶 token（無感）；沒登入帶檢視碼，沒有／錯了就跳輸入框問（Eason 2026-07-31）
+const VIEW_ACTIONS = ['getDoc', 'listDocs', 'bootstrap'];
 
 async function post(action, payload) {
-  const a = auth();
-  if (a && AUTH_ACTIONS.indexOf(action) >= 0) payload = Object.assign({}, payload, { token: a.token });
-  const body = JSON.stringify({ action, payload });
-  // 單機測試版（tools/build-standalone.js 產生的單一檔案）會塞一個本機後端進來，
-  // 這時直接呼叫它，不走網路。正式版沒有這個變數，照常打 API。
-  if (window.__LOCAL_BACKEND__) return JSON.parse(window.__LOCAL_BACKEND__(body));
-  const r = await fetch(API, {
-    method: 'POST',
-    headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-    body: body
-  });
-  const out = await r.json();
-  // 登入失效（例如 Eason 換了 token_secret）→ 回登入畫面，但**草稿絕不清掉**
-  if (out && out.ok === false && out.code === 'UNAUTHORIZED') {
-    clearAuth();
-    showGate('login', '登入已失效，請重新登入');
+  // 最多重試幾次（每次是「使用者被問了一次檢視碼」），不是真的無限迴圈
+  for (let attempt = 0; attempt < 5; attempt++) {
+    const a = auth();
+    let p = payload;
+    if (a && (AUTH_ACTIONS.indexOf(action) >= 0 || VIEW_ACTIONS.indexOf(action) >= 0)) {
+      p = Object.assign({}, payload, { token: a.token });
+    } else if (!a && VIEW_ACTIONS.indexOf(action) >= 0) {
+      const vc = viewCode();
+      if (vc) p = Object.assign({}, payload, { view_code: vc });
+    }
+    const body = JSON.stringify({ action, payload: p });
+    let out;
+    // 單機測試版（tools/build-standalone.js 產生的單一檔案）會塞一個本機後端進來，
+    // 這時直接呼叫它，不走網路。正式版沒有這個變數，照常打 API。
+    if (window.__LOCAL_BACKEND__) {
+      out = JSON.parse(window.__LOCAL_BACKEND__(body));
+    } else {
+      const r = await fetch(API, {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        body: body
+      });
+      out = await r.json();
+    }
+    // 登入失效（例如 Eason 換了 token_secret）→ 回登入畫面，但**草稿絕不清掉**
+    if (out && out.ok === false && out.code === 'UNAUTHORIZED') {
+      clearAuth();
+      showGate('login', '登入已失效，請重新登入');
+      return out;
+    }
+    // 沒登入、讀取 API 要檢視碼：跳輸入框問，存起來重試；再錯就清掉重問
+    if (out && out.ok === false && out.code === 'VIEW_REQUIRED' && !a) {
+      const input = await askViewCode(attempt > 0 ? '檢視碼不對，請再輸入一次。' : '');
+      if (input == null) { clearViewCode(); return out; }   // 使用者取消／沒填，不重試
+      setViewCode(input);
+      continue;
+    }
+    return out;
   }
-  return out;
+  return { ok: false, error: '重試太多次，請稍後再試。', code: 'VIEW_REQUIRED' };
 }
 
 function say(kind, html) {
@@ -652,8 +713,11 @@ function addItem(v) {
     const kw = q('.nm').value.trim().toLowerCase();
     const hits = kw ? brandMemory().filter((m) => m.name.toLowerCase().indexOf(kw) === 0).slice(0, 8) : [];
     if (!hits.length) return hide();
-    box.innerHTML = hits.map((h, i) =>
-      `<div data-i="${i}">${h.name}<span>${[h.spec, h.unit, h.price != null ? '$' + h.price : ''].filter(Boolean).join(' · ')}</span></div>`).join('');
+    // 候選清單來自品項記憶（同仁自己打進去的字），一樣要過 esc() 才能塞進 innerHTML（XSS 修補，2026-07-31）
+    box.innerHTML = hits.map((h, i) => {
+      const meta = [h.spec, h.unit, h.price != null ? '$' + h.price : ''].filter(Boolean).map(esc).join(' · ');
+      return `<div data-i="${i}">${esc(h.name)}<span>${meta}</span></div>`;
+    }).join('');
     box.querySelectorAll('div').forEach((el, i) => {
       el.onclick = () => {
         const h = hits[i];
@@ -827,6 +891,38 @@ function showGate(which, msg) {
   $(box).textContent = msg || '';
   const a = auth();
   if (a) { $('gpinNode').textContent = shortOf(a.node); $('gnameNode').textContent = shortOf(a.node); }
+}
+
+/**
+ * 通用輕量輸入框（風格照登入閘門），回傳 Promise<string|null>：
+ * 確定＝resolve(輸入值)；取消／沒填＝resolve(null)。
+ * 目前給兩處共用：未登入查資料要的檢視碼、刪已簽收單要的會計密碼——兩個都是「用完即丟」，不進 localStorage。
+ */
+function askSecret(title, sub, errMsg) {
+  return new Promise((resolve) => {
+    const g = $('inputGate');
+    $('inputTitle').textContent = title;
+    $('inputSub').textContent = sub;
+    $('inputMsg').className = 'msg' + (errMsg ? ' err' : '');
+    $('inputMsg').textContent = errMsg || '';
+    $('inputField').value = '';
+    g.classList.remove('hide');
+    setTimeout(() => $('inputField').focus(), 30);
+    const close = () => { g.classList.add('hide'); };
+    const ok = () => {
+      const v = $('inputField').value.trim();
+      if (!v) return;
+      close();
+      resolve(v);
+    };
+    const cancel = () => { close(); resolve(null); };
+    $('inputOkBtn').onclick = ok;
+    $('inputCancelBtn').onclick = cancel;
+    $('inputField').onkeydown = (e) => { if (e.key === 'Enter') ok(); };
+  });
+}
+function askViewCode(errMsg) {
+  return askSecret('輸入檢視碼', '要查看資料請先輸入檢視碼', errMsg);
 }
 
 /** 決定現在該停在哪一關；三關都過就進 app */
@@ -1070,7 +1166,16 @@ function bindDocEvents() {
   on('amendBtn', () => { MODE = 'amend'; renderDoc(); });
   on('delBtn', () => {
     // 軟刪除：單據會標成「已刪除」留在系統上（誰刪的記在異動紀錄），月報與待辦不再計入
-    if (confirm(`確定刪除 ${DOC.doc['單號']}？\n\n單據不會消失：會標成「已刪除」留在紀錄裡，查單找得到，但月報不再計入。`)) act('delete');
+    if (!confirm(`確定刪除 ${DOC.doc['單號']}？\n\n單據不會消失：會標成「已刪除」留在紀錄裡，查單找得到，但月報不再計入。`)) return;
+    if (DOC.doc['狀態'] === '已簽收') {
+      // 已簽收的單多一關會計密碼（Eason 2026-07-31 裁決）：用完即丟，不存 localStorage
+      askSecret('輸入會計密碼', '這張單已經簽收了，要刪除需要會計密碼。', '').then((pin) => {
+        if (pin == null) return;   // 沒輸入就不送出
+        act('delete', { pin_master: pin });
+      });
+    } else {
+      act('delete');
+    }
   });
   on('cancelBtn', () => { MODE = ''; renderDoc(); });
   on('submitBtn', () => act(MODE));
@@ -1113,7 +1218,7 @@ function readLines() {
 /** 出貨／簽收／修改／刪除都走這裡。後端一趟一兩秒，所以按下去先鎖按鈕＋改字（Eason 2026-07-31） */
 const ACT_BUSY = { ship: '出貨中…', receive: '簽收中…', delete: '刪除中…', amend: '儲存中…' };
 
-async function act(kind) {
+async function act(kind, extra) {
   const no = DOC.doc['單號'];
   const who = me().name || '';
   if (!who) { dsay('err', '請先到「店別」設定你的名字，紀錄要記是誰做的。'); return; }
@@ -1135,7 +1240,7 @@ async function act(kind) {
     if (kind === 'ship') {
       res = await post('ship', { '單號': no, '操作人': who });
     } else if (kind === 'delete') {
-      res = await post('deleteDoc', { '單號': no, '操作人': who });
+      res = await post('deleteDoc', Object.assign({ '單號': no, '操作人': who }, extra || {}));
     } else if (kind === 'receive') {
       res = await post('receive', { '單號': no, '簽收人': who, lines: readLines() });
     } else {
@@ -1185,18 +1290,27 @@ document.querySelectorAll('nav button').forEach((b) => { b.onclick = () => gotoP
 // ── 單據卡片列表（T4-2 / T4-3）────────────────────────
 const STIDX = { '草稿': 0, '已出貨': 1, '已簽收': 2, '已刪除': 3 };
 
-function docCard(d) {
+/** 逾期天數：預計到貨日 < TODAY 才算，當天到期不算逾期（跟逾期橫幅同一條規則） */
+function daysOverdue(d) {
+  const eta = d['預計到貨日'];
+  if (!eta || String(eta) >= TODAY) return 0;
+  const ms = new Date(TODAY) - new Date(String(eta).slice(0, 10));
+  return Math.max(1, Math.round(ms / 86400000));
+}
+
+function docCard(d, overdueDays) {
   const gap = Number(d['差異總額']);
+  const badge = overdueDays ? `<span class="pill" style="background:var(--danger)">已逾期 ${overdueDays} 天</span> ` : '';
   return `<button class="dc" data-no="${esc(d['單號'])}">
-    <div class="r1"><b>${esc(shortOf(d['調出方']))} → ${esc(shortOf(d['調入方']))}</b>
+    <div class="r1"><b>${badge}${esc(shortOf(d['調出方']))} → ${esc(shortOf(d['調入方']))}</b>
       <div class="pill s${STIDX[d['狀態']] || 0}">${esc(d['狀態'])}</div></div>
     <div class="r2">${esc(String(d['調撥日期']).slice(5))}　·　${d['品項數']} 項　·　<b>${Number(d['應撥總額']).toLocaleString('zh-TW')}</b>${gap ? `<span class="gap">差異 ${gap}</span>` : ''}</div>
     <div class="r3">${esc(d['單號'])}</div>
   </button>`;
 }
 
-function paintList(el, rows, emptyText) {
-  el.innerHTML = rows.length ? rows.map(docCard).join('') : `<div class="none">${emptyText}</div>`;
+function paintList(el, rows, emptyText, markOverdue) {
+  el.innerHTML = rows.length ? rows.map((d) => docCard(d, markOverdue ? daysOverdue(d) : 0)).join('') : `<div class="none">${emptyText}</div>`;
   el.querySelectorAll('.dc').forEach((b) => { b.onclick = () => openDoc(b.dataset.no); });
 }
 
@@ -1208,15 +1322,48 @@ async function loadTodo() {
     post('listDocs', { '調出方': mine, '狀態': '草稿', limit: 50 }),
     post('listDocs', { '調出方': mine, '狀態': '已出貨', limit: 50 })
   ]);
-  const fill = (key, res, empty) => {
+  // 逾期的排最前，讓逾期橫幅點過去找得到目標（Eason 2026-07-31）。
+  // 只有這兩份「已出貨」清單算逾期，跟逾期橫幅查的是同一組資料；草稿沒有出貨這回事，不標。
+  const fillOverdue = (key, res, empty) => {
+    const rows = res.ok ? res.data.rows.slice() : [];
+    rows.sort((a, b) => daysOverdue(b) - daysOverdue(a));
+    $('c-' + key).textContent = rows.length;
+    paintList($('l-' + key), rows, empty, true);
+  };
+  const fillPlain = (key, res, empty) => {
     const rows = res.ok ? res.data.rows : [];
     $('c-' + key).textContent = rows.length;
-    paintList($('l-' + key), rows, empty);
+    paintList($('l-' + key), rows, empty, false);
   };
-  fill('recv', recv, '目前沒有等你簽收的貨');
-  fill('draft', draft, '目前沒有草稿');
-  fill('ship', ship, '目前沒有在路上的貨');
+  fillOverdue('recv', recv, '目前沒有等你簽收的貨');
+  fillPlain('draft', draft, '目前沒有草稿');
+  fillOverdue('ship', ship, '目前沒有在路上的貨');
 }
+
+/**
+ * 逾期橫幅（Eason 2026-07-31）：已登入進入 app 後非同步查，兩份都是「已出貨」，
+ * 分別站在調入方／調出方角度。查詢失敗就靜默不顯示——橫幅是輔助，不准擋操作、不准跳錯誤。
+ */
+async function checkOverdue() {
+  const mine = me().node;
+  const bar = $('overdueBar');
+  if (!mine) { bar.classList.add('hide'); return; }
+  try {
+    const [inRes, outRes] = await Promise.all([
+      post('listDocs', { '調入方': mine, '狀態': '已出貨', limit: 50 }),
+      post('listDocs', { '調出方': mine, '狀態': '已出貨', limit: 50 })
+    ]);
+    if (!inRes.ok || !outRes.ok) { bar.classList.add('hide'); return; }
+    const overdueRows = (r) => (r.data.rows || []).filter((d) => d['預計到貨日'] && String(d['預計到貨日']) < TODAY);
+    const inOverdue = overdueRows(inRes), outOverdue = overdueRows(outRes);
+    const total = inOverdue.length + outOverdue.length;
+    if (!total) { bar.classList.add('hide'); return; }
+    $('overdueMain').textContent = `⚠ 有 ${total} 張貨超過預計到貨日還沒簽收`;
+    $('overdueSub').textContent = `等你簽收 ${inOverdue.length} 張・你出的貨 ${outOverdue.length} 張`;
+    bar.classList.remove('hide');
+  } catch (_) { bar.classList.add('hide'); /* 橫幅是輔助，查詢失敗就不顯示 */ }
+}
+$('overdueBar').onclick = () => gotoPage('todo');
 
 let QOFFSET = 0, QROWS = [];
 /**
@@ -1300,6 +1447,13 @@ $('gpin').addEventListener('keydown', (e) => { if (e.key === 'Enter') doLogin();
 $('gpinBtn').onclick = doChangePinGate;
 $('gnameBtn').onclick = doSaveName;
 $('gname').addEventListener('keydown', (e) => { if (e.key === 'Enter') doSaveName(); });
+// 只想查單、不開單：略過登入直接進 app（唯讀查詢改用檢視碼，Eason 2026-07-31 裁決）
+$('skipLoginBtn').onclick = (e) => {
+  e.preventDefault();
+  showGate('');
+  paintMe();
+  gotoPage('find');
+};
 
 // 登出：清掉登入與名字，**草稿留著**（同仁打的東西不能因為登出就消失）
 $('logoutBtn').onclick = () => {
@@ -1307,6 +1461,7 @@ $('logoutBtn').onclick = () => {
   clearAuth();
   GATE_PIN = '';
   lsDel(K_ME);
+  $('overdueBar').classList.add('hide');
   showGate('login');
 };
 
@@ -1377,12 +1532,26 @@ $('cpBtn').onclick = async () => {
 function enterApp() {
   const a = auth();
   if (!a) return;
+  // 換店偵測（Eason 2026-07-31 裁決）：上次記得的店跟這次登入的不同 →
+  // 開單表單／草稿是別家店留下的，先清乾淨再套新身分。同一店重複登入不清；
+  // 還在編輯既有草稿（editingNo）時維持原邏輯，不因換店被打斷。
+  // ⚠️ 用專屬的 K_LAST_NODE 記「上次登入的店」，不能用 me().node——登出會把 K_ME 清掉，
+  // 沿用它的話「登出再換店登入」這個最常見的情境反而偵測不到（本機 Playwright 驗收踩過這個坑）。
+  let lastNode = '';
+  try { lastNode = localStorage.getItem(K_LAST_NODE) || ''; } catch (_) { lastNode = ''; }
+  const switchedStore = !editingNo && lastNode && lastNode !== a.node;
+  lsSet(K_LAST_NODE, a.node);
   setMe({ node: a.node, name: a.name });     // 舊的本機設定跟著同步，其他畫面照用
+  if (switchedStore) resetForm();            // 內含 clearLocal()，把品項列／日期／備註／草稿一起清掉
   $('packer').value = a.name || '';
   if (!editingNo) { $('from').value = a.node; paintNodes(); }
   $('from').disabled = true;                 // 鎖住：開單只能開自己那一店的
   paintMe();
   calc();
+  // 開機時的 bootstrap 是登入前打的（沒憑證 → items 是空陣列，spec §讀取憑證）；
+  // 這裡登入完拿到 token 了，重打一次才有真正的品項記憶可以帶出候選清單（Eason 2026-07-31）
+  refreshMemory();
+  checkOverdue();   // 逾期橫幅：非同步查，查失敗就靜默，不擋登入流程（Eason 2026-07-31）
 }
 </script>
 </body>
