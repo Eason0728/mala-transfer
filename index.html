@@ -24,26 +24,21 @@
   color-scheme:light;
   --bg:#f1f4f8; --panel:#fdfeff; --head:#e7ecf3; --line:#e1e7ef;
   --ink:#28323e; --dim:#7c8b9d;
-  --accent:#3a72b5; --accent-soft:rgba(58,114,181,.10); --ship:#3a72b5;
-  --brand:#d2542f; --draft:#a3aebc; --review:#d99245; --done:#4a9e78;
+  --accent:#3a72b5; --accent-soft:rgba(58,114,181,.10);  --brand:#d2542f; --draft:#a3aebc; --review:#d99245; --done:#4a9e78;
   --danger:#c9615f; --shadow:0 1px 2px rgba(30,45,65,.04),0 5px 16px rgba(30,45,65,.045);
 }
 :root[data-brand="mozhu"]{
-  --accent:#2f7d7d; --accent-soft:rgba(47,125,125,.10); --ship:#2f7d7d;
-  --bg:#edf4f3; --panel:#fbfdfd; --head:#dcebe9; --line:#dbe8e5;
+  --accent:#2f7d7d; --accent-soft:rgba(47,125,125,.10);  --bg:#edf4f3; --panel:#fbfdfd; --head:#dcebe9; --line:#dbe8e5;
 }
 :root[data-brand="mala"]{
-  --accent:#c4402a; --accent-soft:rgba(196,64,42,.09); --ship:#c4402a;
-  --bg:#f8f1ef; --panel:#fefbfa; --head:#f4e2dc; --line:#ecdeda;
+  --accent:#c4402a; --accent-soft:rgba(196,64,42,.09);  --bg:#f8f1ef; --panel:#fefbfa; --head:#f4e2dc; --line:#ecdeda;
 }
 :root[data-brand="yiwu"]{
-  --accent:#47505c; --accent-soft:rgba(71,80,92,.09); --ship:#47505c;
-  --bg:#eff2f4; --panel:#fbfcfd; --head:#e4e8ec; --line:#dfe4e9;
+  --accent:#47505c; --accent-soft:rgba(71,80,92,.09);  --bg:#eff2f4; --panel:#fbfcfd; --head:#e4e8ec; --line:#dfe4e9;
 }
 /* 中央廚房（鼎兆元總部）刻意用紫——跟青綠／紅／石墨三個品牌一眼分得開 */
 :root[data-brand="hq"]{
-  --accent:#6a4fa3; --accent-soft:rgba(106,79,163,.10); --ship:#6a4fa3;
-  --bg:#f3f0f9; --panel:#fdfcfe; --head:#e8e2f3; --line:#e4dcf0;
+  --accent:#6a4fa3; --accent-soft:rgba(106,79,163,.10);  --bg:#f3f0f9; --panel:#fdfcfe; --head:#e8e2f3; --line:#e4dcf0;
 }
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
 html,body{margin:0;padding:0}
@@ -205,12 +200,6 @@ nav svg{width:22px;height:22px;stroke:currentColor;fill:none;stroke-width:1.7;st
 .msg a{color:inherit;font-weight:700;text-decoration:underline;cursor:pointer}
 .empty{text-align:center;color:var(--dim);padding:56px 24px;font-size:14px}
 .empty b{display:block;color:var(--ink);font-size:16px;margin-bottom:6px}
-.pick{display:grid;grid-template-columns:repeat(2,1fr);gap:10px}
-.pick button{
-  border:1px solid var(--line);background:var(--bg);color:var(--ink);
-  border-radius:11px;padding:14px;font-size:16px;font-weight:600;
-}
-.pick button.on{border-color:var(--accent);background:var(--accent-soft);color:var(--accent)}
 .note{font-size:12px;color:var(--dim);margin-top:10px;line-height:1.6}
 
 /* ── 單據詳情 ───────────────────────────────────────── */
