@@ -108,6 +108,21 @@ select{background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/
 .f:last-child{margin-bottom:0}
 .two{display:grid;grid-template-columns:1fr 1fr;gap:10px}
 
+/* ── 登入閘門 ───────────────────────────────────────── */
+.gate{position:fixed;inset:0;z-index:100;background:var(--bg);overflow:auto;
+      display:flex;align-items:flex-start;justify-content:center;padding:32px 18px}
+.gate.hide{display:none}
+.gate .gbox{background:var(--panel);border:1px solid var(--line);border-radius:16px;
+            padding:24px 20px;width:100%;max-width:380px;box-shadow:var(--shadow)}
+.gate .glogo{width:56px;height:56px;border-radius:12px;display:block;margin:0 auto 12px}
+.gate .gtitle{font-size:18px;font-weight:800;text-align:center;margin:0 0 4px;letter-spacing:.03em}
+.gate .gtitle b{color:var(--dim);font-weight:400}
+.gate .gsub{text-align:center;color:var(--dim);font-size:13px;margin:0 0 18px;line-height:1.6}
+.gate .gsub b{color:var(--accent);font-size:15px}
+.gate .btn{width:100%;margin-top:4px}
+.gate .note{margin-top:10px}
+.gate .hide{display:none}
+
 /* ── 品項卡 ─────────────────────────────────────────── */
 .item{background:var(--bg);border:1px solid var(--line);border-radius:12px;padding:12px;margin-bottom:10px;position:relative}
 .item .del{
@@ -242,6 +257,45 @@ nav svg{width:22px;height:22px;stroke:currentColor;fill:none;stroke-width:1.7;st
 <body>
 
 <div class="app">
+  <!-- ── 登入／強制改密碼／填名字：三道閘門（docs/login/spec.md §5.1）──
+       刻意放在 app 之外、不進 gotoPage 的分頁體系：混進去會出現「登入了但畫面空白」-->
+  <div class="gate hide" id="gate">
+    <div class="gbox">
+      <img class="glogo" id="glogo" alt="調撥系統">
+      <h1 class="gtitle" id="gtitle">鼎兆元<b>｜</b>調撥系統</h1>
+
+      <!-- ① 登入 -->
+      <div id="g-login">
+        <p class="gsub">請選你的門市並輸入密碼</p>
+        <div class="f"><label>門市</label><select id="gnode"></select></div>
+        <div class="f"><label>密碼</label>
+          <input id="gpin" type="password" inputmode="numeric" autocomplete="off" placeholder="預設 0000"></div>
+        <div class="msg" id="gmsg2"></div>
+        <button class="btn" id="gloginBtn">登入</button>
+      </div>
+
+      <!-- ② 強制改密碼（密碼還是 0000 時） -->
+      <div id="g-pin" class="hide">
+        <p class="gsub"><b id="gpinNode"></b><br>還在用預設密碼，請先改成自己的密碼</p>
+        <div class="f"><label>新密碼（4–12 個字）</label>
+          <input id="gnew1" type="password" inputmode="numeric" autocomplete="off"></div>
+        <div class="f"><label>再輸入一次</label>
+          <input id="gnew2" type="password" inputmode="numeric" autocomplete="off"></div>
+        <div class="msg" id="gmsg3"></div>
+        <button class="btn" id="gpinBtn">設定新密碼</button>
+      </div>
+
+      <!-- ③ 填名字（填一次就鎖） -->
+      <div id="g-name" class="hide">
+        <p class="gsub"><b id="gnameNode"></b><br>請填你的名字，之後開單的打包人就是它</p>
+        <div class="f"><label>你的名字</label><input id="gname" placeholder="例如：阿明"></div>
+        <div class="msg" id="gmsg4"></div>
+        <button class="btn" id="gnameBtn">確認</button>
+        <p class="note">填了就鎖住不能改。填錯了要登出重新登入。</p>
+      </div>
+    </div>
+  </div>
+
   <header>
     <div class="hbar">
     <div class="hleft">
@@ -331,14 +385,27 @@ nav svg{width:22px;height:22px;stroke:currentColor;fill:none;stroke-width:1.7;st
     <!-- ④ 店別（原本叫「我」，Eason 2026-07-31 改名；頁面 id 沿用 me 不動，改 id 會牽動所有 gotoPage 呼叫）-->
     <section class="page" id="p-me">
       <div class="card">
-        <h2>我在哪一店</h2>
-        <div class="pick" id="pick"></div>
-        <p class="note">選了之後，開單的「調出方」會預設成這一店；待辦清單也用這個判斷哪些單要你簽收、哪些是你自己出的貨。整個 app 的配色會換成這一店的品牌色。</p>
+        <h2>目前登入</h2>
+        <div class="two">
+          <div class="f"><label>門市</label><input id="whoNode" readonly></div>
+          <div class="f"><label>名字</label><input id="whoName" readonly></div>
+        </div>
+        <p class="note">門市與名字由登入決定，不能在這裡改。要換門市或改名字請按下面的「登出」，重新登入時會再問一次。</p>
+        <button class="btn line danger" id="logoutBtn">登出</button>
       </div>
       <div class="card">
-        <h2>我的名字</h2>
-        <div class="f"><input id="myname" placeholder="例如：阿明"></div>
-        <p class="note">開單的「打包人」就是這個名字（打包人＝我的名字，不用另外填）。</p>
+        <h2>更改密碼</h2>
+        <div class="f"><label>目前密碼</label>
+          <input id="cpOld" type="password" inputmode="numeric" autocomplete="off"></div>
+        <div class="two">
+          <div class="f"><label>新密碼（4–12 個字）</label>
+            <input id="cpNew1" type="password" inputmode="numeric" autocomplete="off"></div>
+          <div class="f"><label>再輸入一次</label>
+            <input id="cpNew2" type="password" inputmode="numeric" autocomplete="off"></div>
+        </div>
+        <div class="msg" id="cpMsg"></div>
+        <button class="btn" id="cpBtn">更改密碼</button>
+        <p class="note">改的是<b id="cpNode"></b>這一店的密碼，其他門市不受影響。改完不會把你踢出登入。</p>
       </div>
       <!-- 操作說明：同仁不用回去翻 LINE 訊息找連結（Eason 2026-07-31） -->
       <div class="card">
@@ -391,13 +458,21 @@ function paintTheme() {
  */
 const brandMemory = () => MEM;
 
+const K_AUTH = 'mala_transfer_auth';
+const AUTH_V = 1;
+
 const $ = (id) => document.getElementById(id);
 // iframe／無痕／file:// 有時會擋 localStorage，擋了就當作沒存，不要讓整個 app 掛掉
 const lsSet = (k, v) => { try { localStorage.setItem(k, v); } catch (_) { /* 存不了就算了 */ } };
 const lsDel = (k) => { try { localStorage.removeItem(k); } catch (_) { /* 同上 */ } };
 const money = (n) => (Math.round(n * 100) / 100).toLocaleString('zh-TW');
 
+// 需要帶 token 的寫入 action（與後端 spec §4.3 同一份名單）
+const AUTH_ACTIONS = ['createDraft', 'updateDraft', 'ship', 'receive', 'amend', 'deleteDoc'];
+
 async function post(action, payload) {
+  const a = auth();
+  if (a && AUTH_ACTIONS.indexOf(action) >= 0) payload = Object.assign({}, payload, { token: a.token });
   const body = JSON.stringify({ action, payload });
   // 單機測試版（tools/build-standalone.js 產生的單一檔案）會塞一個本機後端進來，
   // 這時直接呼叫它，不走網路。正式版沒有這個變數，照常打 API。
@@ -407,7 +482,13 @@ async function post(action, payload) {
     headers: { 'Content-Type': 'text/plain;charset=utf-8' },
     body: body
   });
-  return r.json();
+  const out = await r.json();
+  // 登入失效（例如 Eason 換了 token_secret）→ 回登入畫面，但**草稿絕不清掉**
+  if (out && out.ok === false && out.code === 'UNAUTHORIZED') {
+    clearAuth();
+    showGate('login', '登入已失效，請重新登入');
+  }
+  return out;
 }
 
 function say(kind, html) {
@@ -419,6 +500,23 @@ function say(kind, html) {
 function clearSay() { $('msg').className = 'msg'; }
 
 // ── 我的設定 ──────────────────────────────────────────
+/**
+ * 登入狀態（docs/login/plan.md §3.3）：{ v, node, token, name }
+ * 存 localStorage、一直記住直到按登出（D3）。token 由後端簽發，前端只負責帶著走。
+ */
+function auth() {
+  try {
+    const a = JSON.parse(localStorage.getItem(K_AUTH) || 'null');
+    return a && a.v === AUTH_V && a.node && a.token ? a : null;
+  } catch (_) { return null; }
+}
+function setAuth(patch) {
+  const v = Object.assign({ v: AUTH_V }, auth() || {}, patch);
+  lsSet(K_AUTH, JSON.stringify(v));
+  return v;
+}
+function clearAuth() { lsDel(K_AUTH); }
+
 function me() {
   try { return JSON.parse(localStorage.getItem(K_ME) || '{}'); } catch (_) { return {}; }
 }
@@ -428,11 +526,12 @@ function setMe(patch) {
   paintMe();
 }
 function paintMe() {
-  const m = me();
+  const a = auth() || {};
   paintTheme();
-  $('chip').textContent = m.node ? '我在 ' + shortOf(m.node) : '未設定';
-  $('pick').querySelectorAll('button').forEach((b) => b.classList.toggle('on', b.dataset.node === m.node));
-  if ($('myname').value !== (m.name || '')) $('myname').value = m.name || '';
+  $('chip').textContent = a.node ? '我在 ' + shortOf(a.node) : '未登入';
+  $('whoNode').value = a.node ? shortOf(a.node) : '';
+  $('whoName').value = a.name || '';
+  $('cpNode').textContent = a.node ? shortOf(a.node) : '這';
 }
 
 // ── 節點下拉（調入方不得出現調出方）───────────────────
@@ -611,7 +710,9 @@ function resetForm() {
 /** 單號依「調出方＋調撥日期」產生，所以編輯既有草稿時這兩欄鎖住（spec §2.7 / IMMUTABLE） */
 function lockWhenEditing() {
   const on = !!editingNo;
-  $('from').disabled = on;
+  // 調出方**一律鎖住**：登入決定了它（spec §5.2）。原本只在編輯時鎖，
+  // 那會在非編輯狀態把登入鎖定解掉——兩個鎖疊在同一個欄位，這裡要取聯集。
+  $('from').disabled = true;
   $('date').disabled = on;
   $('saveBtn').textContent = on ? '更新草稿' : '存草稿';
 }
@@ -664,6 +765,82 @@ function validateForm() {
     first.focus({ preventScroll: true });
   }
   return false;
+}
+
+// ── 三道閘門（登入 → 強制改密碼 → 填名字）────────────────
+let GATE_PIN = '';        // 剛登入時輸入的密碼，改密碼那關要拿它當「目前密碼」
+
+/** which: 'login' | 'pin' | 'name' | ''（空＝關閉閘門進 app） */
+function showGate(which, msg) {
+  const gate = $('gate');
+  if (!which) {
+    gate.classList.add('hide');
+    document.body.style.overflow = '';
+    return;
+  }
+  gate.classList.remove('hide');
+  document.body.style.overflow = 'hidden';
+  [['login', 'g-login'], ['pin', 'g-pin'], ['name', 'g-name']].forEach(([k, id]) => {
+    $(id).classList.toggle('hide', k !== which);
+  });
+  const box = { login: 'gmsg2', pin: 'gmsg3', name: 'gmsg4' }[which];
+  $(box).className = msg ? 'msg err' : 'msg';
+  $(box).textContent = msg || '';
+  const a = auth();
+  if (a) { $('gpinNode').textContent = shortOf(a.node); $('gnameNode').textContent = shortOf(a.node); }
+}
+
+/** 決定現在該停在哪一關；三關都過就進 app */
+function routeGate(mustChangePin) {
+  const a = auth();
+  if (!a) return showGate('login');
+  if (mustChangePin) return showGate('pin');
+  if (!a.name) return showGate('name');
+  showGate('');
+  enterApp();
+  return undefined;
+}
+
+async function doLogin() {
+  const node = $('gnode').value, pin = $('gpin').value;
+  if (!node) return showGate('login', '請先選門市。');
+  if (!pin) return showGate('login', '請輸入密碼。');
+  const btn = $('gloginBtn'), old = btn.textContent;
+  btn.disabled = true; btn.textContent = '登入中…';
+  let res;
+  try { res = await post('login', { node: node, pin: pin }); }
+  catch (_) { res = { ok: false, error: '連不到後端，檢查一下網路。' }; }
+  btn.disabled = false; btn.textContent = old;
+  if (!res.ok) return showGate('login', res.error);
+  GATE_PIN = pin;
+  setAuth({ node: res.data.node, token: res.data.token });
+  $('gpin').value = '';
+  routeGate(res.data.mustChangePin);
+}
+
+async function doChangePinGate() {
+  const p1 = $('gnew1').value.trim(), p2 = $('gnew2').value.trim();
+  if (p1 !== p2) return showGate('pin', '兩次輸入的新密碼不一樣。');
+  if (p1.length < 4 || p1.length > 12) return showGate('pin', '新密碼要 4–12 個字。');
+  if (p1 === '0000') return showGate('pin', '新密碼不可以是 0000。');
+  const btn = $('gpinBtn'), old = btn.textContent;
+  btn.disabled = true; btn.textContent = '設定中…';
+  let res;
+  try { res = await post('changeStorePin', { node: auth().node, oldPin: GATE_PIN, newPin: p1 }); }
+  catch (_) { res = { ok: false, error: '連不到後端，檢查一下網路。' }; }
+  btn.disabled = false; btn.textContent = old;
+  if (!res.ok) return showGate('pin', res.error);
+  GATE_PIN = p1;
+  $('gnew1').value = ''; $('gnew2').value = '';
+  routeGate(false);
+}
+
+function doSaveName() {
+  const nm = $('gname').value.trim();
+  if (!nm) return showGate('name', '請填名字。');
+  setAuth({ name: nm });
+  setMe({ name: nm, node: auth().node });   // 舊的本機設定跟著同步，畫面其他地方照用
+  routeGate(false);
 }
 
 // ── 送出 ──────────────────────────────────────────────
@@ -1048,14 +1225,46 @@ $('saveBtn').onclick = save;
     if (id === 'from') paintNodes();
     saveLocal();
   }));
-$('myname').addEventListener('input', (e) => {
-  const v = e.target.value.trim();
-  setMe({ name: v });
-  // 打包人＝我的名字（Eason 2026-07-31）：一律跟著改，不再是「空的才帶入」
-  $('packer').value = v; saveLocal();
-});
-// 打包人欄位是唯讀的，點了直接跳去「店別」填名字
-$('packer').addEventListener('click', () => { gotoPage('me'); $('myname').focus(); });
+// 打包人＝登入時鎖定的名字，改不了；點它只是去看目前登入身分
+$('packer').addEventListener('click', () => gotoPage('me'));
+
+// 閘門的三顆按鈕
+$('gloginBtn').onclick = doLogin;
+$('gpin').addEventListener('keydown', (e) => { if (e.key === 'Enter') doLogin(); });
+$('gpinBtn').onclick = doChangePinGate;
+$('gnameBtn').onclick = doSaveName;
+$('gname').addEventListener('keydown', (e) => { if (e.key === 'Enter') doSaveName(); });
+
+// 登出：清掉登入與名字，**草稿留著**（同仁打的東西不能因為登出就消失）
+$('logoutBtn').onclick = () => {
+  if (!confirm('登出後要重新選門市、輸密碼、填名字。確定登出？')) return;
+  clearAuth();
+  GATE_PIN = '';
+  lsDel(K_ME);
+  showGate('login');
+};
+
+// 「店別」分頁裡的更改密碼
+$('cpBtn').onclick = async () => {
+  const a = auth();
+  if (!a) return;
+  const oldPin = $('cpOld').value.trim(), p1 = $('cpNew1').value.trim(), p2 = $('cpNew2').value.trim();
+  const say2 = (kind, text) => { $('cpMsg').className = 'msg ' + kind; $('cpMsg').textContent = text; };
+  if (!oldPin) return say2('err', '請輸入目前密碼。');
+  if (p1 !== p2) return say2('err', '兩次輸入的新密碼不一樣。');
+  if (p1.length < 4 || p1.length > 12) return say2('err', '新密碼要 4–12 個字。');
+  if (p1 === '0000') return say2('err', '新密碼不可以是 0000。');
+  const btn = $('cpBtn'), old = btn.textContent;
+  btn.disabled = true; btn.textContent = '更改中…';
+  let res;
+  try { res = await post('changeStorePin', { node: a.node, oldPin: oldPin, newPin: p1 }); }
+  catch (_) { res = { ok: false, error: '連不到後端，檢查一下網路。' }; }
+  btn.disabled = false; btn.textContent = old;
+  if (!res.ok) return say2('err', res.error);
+  ['cpOld', 'cpNew1', 'cpNew2'].forEach((id) => { $(id).value = ''; });
+  GATE_PIN = p1;
+  say2('ok', '密碼已更改。下次登入請用新密碼。');
+};
 
 (async function boot() {
   let b;
@@ -1070,14 +1279,10 @@ $('packer').addEventListener('click', () => { gotoPage('me'); $('myname').focus(
     say('err', '連不到後端，先用離線模式。填的東西會留在這台手機上。');
   }
 
-  $('pick').innerHTML = NODES.map((n) => `<button data-node="${n.name}">${n.short}</button>`).join('');
-  $('pick').querySelectorAll('button').forEach((btn) => {
-    btn.onclick = () => {
-      const nm = btn.dataset.node;
-      setMe({ node: nm });
-      if (!editingNo) { $('from').value = nm; paintNodes(); saveLocal(); }
-    };
-  });
+  // 登入畫面的門市下拉（帳號＝店別，D1）
+  $('gnode').innerHTML = '<option value="">請選門市</option>' +
+    NODES.map((n) => `<option value="${n.name}">${n.short}</option>`).join('');
+  $('glogo').src = document.querySelector('link[rel="apple-touch-icon"]').href;
   $('qnode').innerHTML = '<option value="">全部門市</option>' +
     NODES.map((n) => `<option value="${n.name}">${n.short}</option>`).join('');
 
@@ -1092,9 +1297,27 @@ $('packer').addEventListener('click', () => { gotoPage('me'); $('myname').focus(
   }
   if (saved) fillForm(saved); else resetForm();
 
-  // 還沒設定「我在哪一店」就先帶去設定頁
-  if (!me().node) document.querySelector('nav button[data-p="me"]').click();
+  // 三道閘門：沒登入 → 登入；登入了沒名字 → 填名字；都過了 → 進 app
+  // 舊裝置過渡：本機曾填過的名字拿來預填，讓同仁少打字（但店別不預填，要他自己選一次）
+  const old = me();
+  if (old.name && $('gname').value === '') $('gname').value = old.name;
+  routeGate(false);
 })();
+
+/**
+ * 三關都過之後才做的事：把身分套進畫面。
+ * 調出方鎖成登入的店——留著可改就等於沒鎖（spec §5.2）。
+ */
+function enterApp() {
+  const a = auth();
+  if (!a) return;
+  setMe({ node: a.node, name: a.name });     // 舊的本機設定跟著同步，其他畫面照用
+  $('packer').value = a.name || '';
+  if (!editingNo) { $('from').value = a.node; paintNodes(); }
+  $('from').disabled = true;                 // 鎖住：開單只能開自己那一店的
+  paintMe();
+  calc();
+}
 </script>
 </body>
 </html>
