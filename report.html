@@ -274,20 +274,16 @@ function paintReport() {
     <p class="note">調出單數／調出總額有底線的數字可以點，會列出這一店調給了哪幾家門市、各幾張、各多少錢。</p>
     <div id="flow"></div>
     <div class="btns">
-      <button id="dlx">下載 Excel（每個品牌一個分頁）</button>
-      <button class="line sm" id="dl1">明細 CSV（一列一個品項）</button>
+      <button id="dlx">下載 Excel</button>
       ${RPT.xlsxUrl ? `<a href="${RPT.xlsxUrl}"><button class="line sm">整份試算表</button></a>` : ''}
     </div>
     <h3>逐張明細（${d.rows.length} 張）</h3>
     <div class="scroll"><table>${tableHtml(d.headers, d.rows, false)}</table></div>
-    <p class="note">會計認的是<b>應撥總額</b>；實收總額與差異總額只是拿來追問題，不進帳。
-    <b>下載 Excel</b> 給的是 .xlsx，裡面有「彙總、全部明細、品項明細、墨竹亭、一悟燒肉、小辛辣、鼎兆元總部」七個分頁；
-    每個品牌的分頁收的是「調出或調入其中一方是這個品牌」的單。
-    「明細 CSV」一列一個品項（品項、單價、數量、小計、實收、差異原因），已加 UTF-8 BOM，Excel 開不會亂碼。
-    彙總的「↳ 調出至」子列在 Excel 的彙總分頁裡看得到。</p>`;
+    <p class="note">會計認的是<b>應撥總額</b>。<b>下載 Excel</b> 給的是 .xlsx，裡面有
+    「彙總、全部明細、墨竹亭、一悟燒肉、小辛辣、鼎兆元總部」六個分頁。
+    <b>全部明細一列一個品項</b>（單號／狀態／日期／調出調入門市／打包人／簽收人／品項／類別／規格／單位／單價／數量／小計），
+    品牌分頁收的是「調出或調入其中一方是這個品牌」的列。彙總的「↳ 調出至」子列在彙總分頁裡看得到。</p>`;
   $('dlx').onclick = downloadXlsx;
-  // RPT.items 是 2026-07-29 之後的後端才有；舊後端先退回逐張表，不要讓按鈕壞掉
-  $('dl1').onclick = () => csv(RPT.items || RPT.detail, `調撥月報_${RPT.ym}_品項明細.csv`);
   $('rpt').querySelectorAll('a.flow').forEach((a) => { a.onclick = () => showFlow(a.dataset.node); });
 }
 
@@ -394,19 +390,29 @@ function buildXlsx(sheets) {
   return zipStore(files);
 }
 
-/** 月報 xlsx：彙總 ＋ 全部明細 ＋ 每個品牌一張分頁 */
+/**
+ * 月報 xlsx：彙總 ＋ 全部明細 ＋ 每個品牌一張分頁
+ * 「全部明細」＝**一列一個品項**（Eason 2026-07-31 指定欄位：單號／狀態／調撥日期／
+ * 調出門市簡稱／調入門市簡稱／打包人／簽收人／品項名稱／類別／規格／單位／單價／數量／小計）。
+ * 品牌分頁同一份資料，只留「調出或調入其中一方是這個品牌」的列。
+ * 舊後端沒有 items 時退回逐張單的明細，Excel 照樣下載得到。
+ */
 function reportSheets() {
-  const H = RPT.detail.headers;
-  const iOutBrand = H.indexOf('調出品牌'), iInBrand = H.indexOf('調入品牌');
+  const D = RPT.items || RPT.detail;
+  const H = D.headers;
+  // 靠欄位名找品牌，不靠位置（欄位順序改過就錯的老坑）
+  const iOut = H.indexOf('調出門市'), iIn = H.indexOf('調入門市');
   const brands = ['墨竹亭', '一悟燒肉', '小辛辣', '鼎兆元總部'];
+  // 門市欄是簡稱（墨·金山），品牌要靠簡稱前綴對回去；央廚沒有前綴，自己一組
+  const prefix = { '墨竹亭': '墨·', '一悟燒肉': '悟·', '小辛辣': '辣·' };
   const sheets = [
     { name: '彙總', headers: RPT.summary.headers, rows: RPT.summary.expanded },
-    { name: '全部明細', headers: H, rows: RPT.detail.rows }
+    { name: '全部明細', headers: H, rows: D.rows }
   ];
-  // 一列一個品項的分頁（舊後端沒有 items 就略過，Excel 照樣能下載）
-  if (RPT.items) sheets.push({ name: '品項明細', headers: RPT.items.headers, rows: RPT.items.rows });
   brands.forEach((b) => {
-    const rows = RPT.detail.rows.filter((r) => r[iOutBrand] === b || r[iInBrand] === b);
+    const belongs = (v) => b === '鼎兆元總部' ? String(v) === '中央廚房'
+      : String(v).indexOf(prefix[b]) === 0;
+    const rows = D.rows.filter((r) => belongs(r[iOut]) || belongs(r[iIn]));
     sheets.push({ name: b, headers: H, rows: rows });
   });
   return sheets;
@@ -422,16 +428,8 @@ function downloadXlsx() {
   setTimeout(() => URL.revokeObjectURL(a.href), 1000);
 }
 
-function csv(t, filename) {
-  const q = (v) => `"${String(v == null ? '' : v).replace(/"/g, '""')}"`;
-  const body = [t.headers].concat(t.rows).map((r) => r.map(q).join(',')).join('\r\n');
-  const blob = new Blob(['﻿' + body], { type: 'text/csv;charset=utf-8' });
-  const a = document.createElement('a');
-  a.href = URL.createObjectURL(blob);
-  a.download = filename;
-  a.click();
-  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
-}
+// 明細 CSV 按鈕 2026-07-31 移除（Eason：會計專區不需要），csv() 一起拿掉——
+// 需要的資料都在 Excel 的「全部明細」分頁裡，Excel 另存 CSV 也一秒的事。
 
 // ── 管理 ──────────────────────────────────────────────
 let ADM = null;
