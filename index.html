@@ -122,6 +122,10 @@ select{background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/
 .gate .btn{width:100%;margin-top:4px}
 .gate .note{margin-top:10px}
 .gate .hide{display:none}
+/* 會計專區入口：做小、放在登入鈕下面——門市同仁不會誤點，會計看得到 */
+.gate .gfoot{text-align:center;font-size:13px;color:var(--dim);margin:16px 0 0}
+.gate .gfoot a{color:var(--accent);font-weight:700;text-decoration:none;
+  border-bottom:1px solid var(--accent-soft);padding-bottom:1px}
 
 /* ── 品項卡 ─────────────────────────────────────────── */
 .item{background:var(--bg);border:1px solid var(--line);border-radius:12px;padding:12px;margin-bottom:10px;position:relative}
@@ -273,6 +277,9 @@ nav svg{width:22px;height:22px;stroke:currentColor;fill:none;stroke-width:1.7;st
           <input id="gpin" type="password" inputmode="numeric" autocomplete="off" placeholder="預設 0000"></div>
         <div class="msg" id="gmsg2"></div>
         <button class="btn" id="gloginBtn">登入</button>
+        <!-- 會計沒有門市帳號，所以入口一定要放在登入頁：否則會計得先借某店的密碼登入
+             才看得到 app 抬頭那個連結（2026-07-31 加登入後造成的死路）-->
+        <p class="gfoot">會計對帳請走 <a href="report.html">會計專區 ›</a></p>
       </div>
 
       <!-- ② 強制改密碼（密碼還是 0000 時） -->
