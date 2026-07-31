@@ -68,6 +68,19 @@ tr.total td{font-weight:700;background:var(--accent-soft)}
 .mtx td.mx i{display:block;font-style:normal;font-size:11px;color:var(--dim);margin-top:1px}
 .mtx td.mx{background:var(--accent-soft)}
 .mtx td.mx0{color:var(--line)}
+.mtx td.mx a{color:var(--accent);text-decoration:underline;cursor:pointer;font-weight:700}
+/* 矩陣格子的彈出視窗（Eason 2026-07-31：點金額看食材／包材各多少） */
+.pop{position:fixed;inset:0;background:rgba(20,30,45,.45);display:flex;align-items:center;
+     justify-content:center;padding:20px;z-index:50}
+.pop.hide{display:none}
+.pop .box{background:var(--panel);border-radius:16px;padding:20px;max-width:360px;width:100%;
+          box-shadow:0 12px 40px rgba(20,30,45,.25)}
+.pop h4{margin:0 0 4px;font-size:16px}
+.pop .sub{color:var(--dim);font-size:13px;margin-bottom:14px}
+.pop dl{display:grid;grid-template-columns:1fr auto;gap:9px 12px;margin:0 0 16px;font-size:15px}
+.pop dt{color:var(--dim)}
+.pop dd{margin:0;text-align:right;font-weight:700;font-variant-numeric:tabular-nums}
+.pop dl .ln{grid-column:1/-1;border-top:1px solid var(--line);margin:2px 0}
 a.flow{color:var(--accent);text-decoration:underline;cursor:pointer;font-weight:600}
 .note{font-size:12px;color:var(--dim);margin-top:10px;line-height:1.65}
 .hide{display:none}
@@ -112,13 +125,14 @@ a.flow{color:var(--accent);text-decoration:underline;cursor:pointer;font-weight:
     <div id="rpt"></div>
   </div>
 
+  <!-- 矩陣金額的彈出視窗 -->
+  <div class="pop hide" id="pop"><div class="box" id="popBox"></div></div>
+
   <!-- 管理 -->
   <div class="card hide" id="admCard">
     <h2>資料整理</h2>
 
-    <h3>差異原因清單</h3>
-    <div class="scroll"><table id="rtab"></table></div>
-    <p class="note">停用的原因不會再出現在簽收選單，但舊單照樣顯示原本的名字。合併會把舊單的代碼一起改過去，所以歷史資料不會斷。固定的六項不能停用。</p>
+    <!-- 差異原因清單 2026-07-31 移除（Eason）：改名／停用／合併走試算表「差異原因」分頁 -->
 
     <h3>品項記憶</h3>
     <div class="row" style="margin-bottom:4px">
@@ -229,7 +243,8 @@ function matrixHtml() {
       if (!hit) return '<td class="n mx0">—</td>';
       rowTot += hit.amount;
       colTot[d] = (colTot[d] || 0) + hit.amount;
-      return `<td class="n mx"><b>${n2(hit.amount)}</b><i>${hit.docs} 張</i></td>`;
+      // 金額做成連結：點了彈出視窗看食材／包材各多少（Eason 2026-07-31）
+      return `<td class="n mx"><b><a class="cell" data-from="${esc(s)}" data-to="${esc(d)}">${n2(hit.amount)}</a></b><i>${hit.docs} 張</i></td>`;
     }).join('');
     return `<tr><th class="rowh">${esc(label(s))}</th>${tds}<td class="n"><b>${n2(rowTot)}</b></td></tr>`;
   }).join('');
@@ -239,8 +254,41 @@ function matrixHtml() {
 
   return `<h3>調撥矩陣（${esc(RPT.ym)}　誰調給誰）</h3>
     <div class="scroll"><table class="mtx"><thead>${head}</thead><tbody>${rows}${foot}</tbody></table></div>
-    <p class="note">橫的看是「這一店調出去給了誰」，直的看是「這一店收到誰的貨」。格子上面是金額、下面是張數，沒往來就留「—」。</p>`;
+    <p class="note">橫的看是「這一店調出去給了誰」，直的看是「這一店收到誰的貨」。格子上面是金額、下面是張數，沒往來就留「—」。
+    <b>點金額</b>會跳出這一格的食材／包材各多少錢。</p>`;
 }
+
+/**
+ * 點矩陣格子的金額 → 彈出視窗，拆這一格的食材／包材金額（Eason 2026-07-31）。
+ * food／pack 由後端 flows 帶來（舊後端沒有就顯示「這版後端沒有拆帳」，不要算出假數字）。
+ */
+function showCell(from, to) {
+  const hit = ((RPT.flows || {})[from] || []).find((x) => x.node === to);
+  if (!hit) return;
+  const nameOf = (n) => {
+    const i = (RPT.summary.nodes || []).indexOf(n);
+    return i >= 0 ? RPT.summary.rows[i].slice(0, 2).join(' ') : n;
+  };
+  const split = hit.food !== undefined && hit.pack !== undefined;
+  const other = split ? Math.round((hit.amount - hit.food - hit.pack) * 100) / 100 : 0;
+  $('popBox').innerHTML = `
+    <h4>${esc(nameOf(from))} → ${esc(nameOf(to))}</h4>
+    <div class="sub">${esc(RPT.ym)}　${hit.docs} 張單</div>
+    ${split ? `<dl>
+      <dt>食材</dt><dd>${n2(hit.food)}</dd>
+      <dt>包材</dt><dd>${n2(hit.pack)}</dd>
+      ${other ? `<dt>未分類</dt><dd>${n2(other)}</dd>` : ''}
+      <div class="ln"></div>
+      <dt>合計</dt><dd>${n2(hit.amount)}</dd>
+    </dl>` : `<dl><dt>合計</dt><dd>${n2(hit.amount)}</dd></dl>
+      <p class="note">這版後端還沒有食材／包材拆帳，重新產一次月報就會有。</p>`}
+    <div class="btns"><button id="popClose">關閉</button></div>`;
+  $('pop').classList.remove('hide');
+  $('popClose').onclick = closePop;
+}
+function closePop() { $('pop').classList.add('hide'); }
+$('pop').onclick = (e) => { if (e.target.id === 'pop') closePop(); };   // 點外面也關
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closePop(); });
 
 /** 點了調出數字之後，在表格下面攤開「調給了誰」 */
 function showFlow(node) {
@@ -264,7 +312,8 @@ function showFlow(node) {
 }
 
 function paintReport() {
-  const d = RPT.detail, s = RPT.summary;
+  // 逐張明細表 2026-07-31 移除（Eason）：畫面只留矩陣＋彙總，逐筆資料看 Excel
+  const s = RPT.summary;
   // 彙總沒有淨額／差異總額／有差異的單數三欄（Eason 2026-07-30：畫面與下載一致）——
   // 是後端 RPT_SUM_HEAD 就不產，不是前端藏；要恢復去改 Code.gs
   $('rpt').innerHTML = `
@@ -277,14 +326,15 @@ function paintReport() {
       <button id="dlx">下載 Excel</button>
       ${RPT.xlsxUrl ? `<a href="${RPT.xlsxUrl}"><button class="line sm">整份試算表</button></a>` : ''}
     </div>
-    <h3>逐張明細（${d.rows.length} 張）</h3>
-    <div class="scroll"><table>${tableHtml(d.headers, d.rows, false)}</table></div>
     <p class="note">會計認的是<b>應撥總額</b>。<b>下載 Excel</b> 給的是 .xlsx，裡面有
     「彙總、全部明細、墨竹亭、一悟燒肉、小辛辣、鼎兆元總部」六個分頁。
     <b>全部明細一列一個品項</b>（單號／狀態／日期／調出調入門市／打包人／簽收人／品項／類別／規格／單位／單價／數量／小計），
     品牌分頁收的是「調出或調入其中一方是這個品牌」的列。彙總的「↳ 調出至」子列在彙總分頁裡看得到。</p>`;
   $('dlx').onclick = downloadXlsx;
   $('rpt').querySelectorAll('a.flow').forEach((a) => { a.onclick = () => showFlow(a.dataset.node); });
+  $('rpt').querySelectorAll('a.cell').forEach((a) => {
+    a.onclick = () => showCell(a.dataset.from, a.dataset.to);
+  });
 }
 
 // ── 產生真正的 .xlsx（多分頁）──────────────────────────
@@ -435,24 +485,9 @@ function downloadXlsx() {
 let ADM = null;
 function paintAdmin(data) {
   ADM = data;
-  const rs = data.reasons;
-  $('rtab').innerHTML = `<thead><tr><th>代碼</th><th>名稱</th><th>類型</th><th class="n">使用次數</th><th>狀態</th><th></th></tr></thead>
-    <tbody>${rs.map((r) => `<tr class="${r.on ? '' : 'off'}">
-      <td>${esc(r.code)}</td>
-      <td><input class="rn" data-code="${r.code}" value="${esc(r.name)}" style="min-width:130px"></td>
-      <td>${esc(r.type)}</td><td class="n">${r.uses}</td>
-      <td>${r.on ? '啟用中' : '已停用'}</td>
-      <td style="white-space:nowrap">
-        <button class="sm line rsave" data-code="${r.code}">改名</button>
-        ${r.type === '固定' ? '<span class="tag">固定項不可停用</span>'
-        : `<button class="sm line rtog" data-code="${r.code}" data-on="${r.on ? 1 : 0}">${r.on ? '停用' : '啟用'}</button>
-           <button class="sm line rmg" data-code="${r.code}">合併到…</button>`}
-      </td></tr>`).join('')}</tbody>`;
-
   const brands = [...new Set(data.items.map((i) => i.brand))];
   $('mbrand').innerHTML = '<option value="">全部</option>' + brands.map((b) => `<option>${esc(b)}</option>`).join('');
   paintMem();
-  bindAdmin();
 }
 
 function paintMem() {
@@ -473,26 +508,7 @@ function paintMem() {
 }
 $('mbrand').onchange = paintMem;
 
-function bindAdmin() {
-  $('rtab').querySelectorAll('.rsave').forEach((b) => {
-    b.onclick = () => {
-      const inp = $('rtab').querySelector(`.rn[data-code="${b.dataset.code}"]`);
-      adm({ op: 'reason', code: b.dataset.code, name: inp.value.trim() }, '已改名');
-    };
-  });
-  $('rtab').querySelectorAll('.rtog').forEach((b) => {
-    b.onclick = () => adm({ op: 'reason', code: b.dataset.code, '啟用': b.dataset.on !== '1' },
-      b.dataset.on === '1' ? '已停用' : '已啟用');
-  });
-  $('rtab').querySelectorAll('.rmg').forEach((b) => {
-    b.onclick = () => {
-      const others = ADM.reasons.filter((r) => r.code !== b.dataset.code);
-      const to = prompt('要併到哪一個？填代碼：\n' + others.map((r) => `${r.code}　${r.name}`).join('\n'));
-      if (!to) return;
-      adm({ op: 'reasonMerge', from: b.dataset.code, to: to.trim() }, '已合併，舊單的代碼也一起改過去了');
-    };
-  });
-}
+// bindAdmin 隨差異原因清單一起移除（2026-07-31）
 
 async function adm(payload, okText, after) {
   const res = await post('adminUpdate', Object.assign({ pin_master: PIN }, payload));

@@ -119,6 +119,7 @@ select{background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/
 .cats button{flex:1;font:inherit;font-size:14px;padding:9px 0;border-radius:10px;
   border:1px solid var(--line);background:var(--panel);color:var(--dim);cursor:pointer}
 .cats button.on{border-color:var(--accent);color:var(--accent);background:var(--accent-soft);font-weight:700}
+.cats.bad button{border-color:var(--danger);background:rgba(214,69,69,.06)}   /* 沒選類別時整組標紅 */
 .sub{text-align:right;font-size:13px;color:var(--dim);margin-top:8px}
 .sub b{color:var(--ink);font-size:15px}
 .cands{
@@ -457,7 +458,7 @@ function addItem(v) {
       <div class="cands"></div>
     </div>
     <div class="f">
-      <label>類別</label>
+      <label>類別<span class="req">＊</span></label>
       <div class="cats">
         <button type="button" data-v="食材">食材</button>
         <button type="button" data-v="包材">包材</button>
@@ -479,14 +480,20 @@ function addItem(v) {
   q('.un').value = v.unit || ''; q('.pr').value = v.price != null ? v.price : '';
   q('.qt').value = v.qty != null ? v.qty : '';
 
-  // 類別二選一，沒選（含舊草稿）一律當食材——跟後端 normCat_ 同一條規則
+  // 類別二選一，**預設不選**（Eason 2026-07-31：一定要自己點，不要幫他猜食材）。
+  // 帶回舊草稿時才沿用存過的值；後端 normCat_ 也擋空白，前後端同一條規則。
   const setCat = (val) => {
-    d.dataset.cat = val;
+    d.dataset.cat = val || '';
     d.querySelectorAll('.cats button').forEach((b) => b.classList.toggle('on', b.dataset.v === val));
   };
-  setCat(v.cat === '包材' ? '包材' : '食材');
+  setCat(v.cat === '包材' || v.cat === '食材' ? v.cat : '');
   d.querySelectorAll('.cats button').forEach((b) => {
-    b.onclick = () => { setCat(b.dataset.v); saveLocal(); };
+    b.onclick = () => {
+      setCat(b.dataset.v);
+      d.querySelector('.cats').classList.remove('bad');
+      if (!d.querySelector('.bad')) d.querySelector('.why').className = 'why';
+      saveLocal();
+    };
   });
 
   q('.del').onclick = () => { d.remove(); ensureOne(); calc(); saveLocal(); };
@@ -531,7 +538,7 @@ function readItems() {
     unit: d.querySelector('.un').value.trim(),
     price: d.querySelector('.pr').value,
     qty: d.querySelector('.qt').value,
-    cat: d.dataset.cat || '食材'
+    cat: d.dataset.cat || ''
   }));
 }
 
@@ -628,6 +635,7 @@ function validateForm() {
     if (!nm.value.trim()) { nm.classList.add('bad'); probs.push('品項名稱要填'); }
     if (!(Number(pr.value) > 0)) { pr.classList.add('bad'); probs.push('單價要填，且大於 0'); }
     if (!(Number(qt.value) > 0)) { qt.classList.add('bad'); probs.push('數量要填，且大於 0'); }
+    if (!d.dataset.cat) { d.querySelector('.cats').classList.add('bad'); probs.push('類別要選食材或包材'); }
     if (!probs.length) return;
     const why = d.querySelector('.why');
     why.textContent = probs.join('　·　');
@@ -656,7 +664,7 @@ async function save() {
       '打包人': f.packer.trim(), '備註': f.note.trim()
     },
     items: f.items.map((i) => ({
-      '品項名稱': i.name, '規格': i.spec, '單位': i.unit, '類別': i.cat || '食材',
+      '品項名稱': i.name, '規格': i.spec, '單位': i.unit, '類別': i.cat,
       '調撥單價': i.price === '' ? '' : Number(i.price),
       '應撥數量': i.qty === '' ? '' : Number(i.qty)
     })),
@@ -761,7 +769,7 @@ function renderDoc() {
       edit = `<div class="rowin">
         <div><label>實際簽收數量</label>
           <input class="rq" data-idx="${idx}" type="number" inputmode="decimal" min="0" step="0.01"
-                 value="${got === '' || got === null ? '' : got}" placeholder="${plan}"></div>
+                 value="${got === '' || got === null ? '' : got}"></div>
         <div><label>差異原因</label>
           <select class="rr" data-idx="${idx}"><option value="">正常</option>${opts}<option value="OTHER">其他（自己打）</option></select></div>
       </div>
@@ -873,10 +881,25 @@ function readLines() {
   });
 }
 
+/** 出貨／簽收／修改／刪除都走這裡。後端一趟一兩秒，所以按下去先鎖按鈕＋改字（Eason 2026-07-31） */
+const ACT_BUSY = { ship: '出貨中…', receive: '簽收中…', delete: '刪除中…', amend: '儲存中…' };
+
 async function act(kind) {
   const no = DOC.doc['單號'];
   const who = me().name || '';
   if (!who) { dsay('err', '請先到「我」設定你的名字，紀錄要記是誰做的。'); return; }
+
+  // 這一頁上所有動作鈕一起鎖：出貨到一半又按刪除會做出兩件事
+  const btns = [...document.querySelectorAll('#p-doc .acts .btn')];
+  const clicked = document.getElementById(
+    kind === 'ship' ? 'shipBtn' : kind === 'delete' ? 'delBtn' : 'submitBtn');
+  const oldText = clicked ? clicked.textContent : '';
+  btns.forEach((b) => { b.disabled = true; });
+  if (clicked) clicked.textContent = ACT_BUSY[kind] || '處理中…';
+  const unlock = () => {
+    btns.forEach((b) => { b.disabled = false; });
+    if (clicked) clicked.textContent = oldText;
+  };
 
   let res;
   try {
@@ -897,15 +920,17 @@ async function act(kind) {
           changes.push({ path: `明細#${l['列序']}.差異原因代碼`, value: l['差異原因代碼'], custom: l['自訂原因'] });
         }
       });
-      if (!changes.length) { dsay('err', '沒有改到任何東西。'); return; }
+      if (!changes.length) { unlock(); dsay('err', '沒有改到任何東西。'); return; }
       res = await post('amend', { '單號': no, '操作人': who, changes: changes });
     }
   } catch (err) {
+    unlock();
     dsay('err', '送不出去，可能是沒有網路，等一下再按一次。');
     return;
   }
 
-  if (!res.ok) { dsay('err', res.error + '　[' + res.code + ']'); return; }
+  if (!res.ok) { unlock(); dsay('err', res.error + '　[' + res.code + ']'); return; }
+  // 成功就整頁重畫（按鈕跟著換一批），不用還原文字
   MODE = '';
   await refreshMemory();
   await openDoc(no);
