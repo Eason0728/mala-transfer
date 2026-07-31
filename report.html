@@ -135,11 +135,10 @@ a.flow{color:var(--accent);text-decoration:underline;cursor:pointer;font-weight:
     <!-- 差異原因清單 2026-07-31 移除（Eason）：改名／停用／合併走試算表「差異原因」分頁 -->
 
     <h3>品項記憶</h3>
-    <div class="row" style="margin-bottom:4px">
-      <div style="max-width:220px"><label>只看某個品牌</label><select id="mbrand"><option value="">全部</option></select></div>
-    </div>
+    <!-- 品項記憶全部門市共用（Eason 2026-07-31），所以沒有品牌欄也沒有品牌篩選 -->
     <div class="scroll"><table id="mtab"></table></div>
-    <p class="note">刪掉之後只是不再自動帶出來，已經開過的單不受影響。</p>
+    <p class="note">全部門市共用同一份清單，任何一店開單都會用到、也會更新它。
+    名稱／規格／單位可以直接改，改完按該列的「儲存」；刪掉只是不再自動帶出來，已經開過的單不受影響。</p>
     <div class="msg" id="amsg"></div>
   </div>
 </div>
@@ -219,20 +218,26 @@ function tableHtml(headers, rows, totalLast, nodes) {
 function matrixHtml() {
   const nodes = RPT.summary.nodes || [];
   const flows = RPT.flows || {};
+  // 調入方**不能只從 nodes 裡挑**：篩選單一門市時 nodes 只有那一家，
+  // 調給別家的欄位會全被濾掉，矩陣看起來像沒資料（Eason 2026-07-31 回報）。
+  // 節點的標準順序用 shorts 的鍵（後端照 NODE_LIST 順序給），沒有就退回 nodes。
+  const allNodes = Object.keys(RPT.shorts || {});
+  const order = allNodes.length ? allNodes : nodes;
   const label = (n) => {
     const i = nodes.indexOf(n);
-    return i >= 0 ? RPT.summary.rows[i][0] + ' ' + RPT.summary.rows[i][1] : n;
+    if (i >= 0) return RPT.summary.rows[i][0] + ' ' + RPT.summary.rows[i][1];
+    return (RPT.shorts || {})[n] || n;   // 不在彙總裡（被篩掉的對手店）就用簡稱
   };
-  const srcs = nodes.filter((n) => (flows[n] || []).length);
+  const srcs = order.filter((n) => (flows[n] || []).length);
   if (!srcs.length) return '<h3>調撥矩陣</h3><p class="note">這個月沒有調撥紀錄。</p>';
 
   // 只列出真的有收到貨的門市，欄位才不會一整片空的
   const dstSet = new Set();
   srcs.forEach((s) => flows[s].forEach((d) => dstSet.add(d.node)));
-  const dsts = nodes.filter((n) => dstSet.has(n));
+  const dsts = order.filter((n) => dstSet.has(n));
   const shortOf = (n) => {
     for (const s of srcs) { const hit = flows[s].find((d) => d.node === n); if (hit) return hit.short; }
-    return n;
+    return (RPT.shorts || {})[n] || n;
   };
 
   const head = `<tr><th>調出 ＼ 調入</th>${dsts.map((d) => `<th class="n">${esc(shortOf(d))}</th>`).join('')}<th class="n">合計</th></tr>`;
@@ -518,18 +523,14 @@ function downloadXlsx() {
 let ADM = null;
 function paintAdmin(data) {
   ADM = data;
-  const brands = [...new Set(data.items.map((i) => i.brand))];
-  $('mbrand').innerHTML = '<option value="">全部</option>' + brands.map((b) => `<option>${esc(b)}</option>`).join('');
   paintMem();
 }
 
 function paintMem() {
-  const f = $('mbrand').value;
-  const list = ADM.items.filter((i) => !f || i.brand === f);
+  const list = ADM.items;   // 共用一份，沒有品牌可篩
   // 名稱／規格／單位做成可編輯的欄位（Eason 2026-07-31）；最近單價與用過幾次是系統累積的，只顯示不給改
-  $('mtab').innerHTML = `<thead><tr><th>品牌</th><th>品項</th><th>規格</th><th>單位</th><th class="n">最近單價</th><th class="n">用過幾次</th><th></th></tr></thead>
+  $('mtab').innerHTML = `<thead><tr><th>品項</th><th>規格</th><th>單位</th><th class="n">最近單價</th><th class="n">用過幾次</th><th></th></tr></thead>
     <tbody>${list.length ? list.map((i, k) => `<tr>
-      <td>${esc(i.brand)}</td>
       <td><input class="me-name" data-k="${k}" value="${esc(i.name)}" style="min-width:120px"></td>
       <td><input class="me-spec" data-k="${k}" value="${esc(i.spec)}" style="min-width:90px"></td>
       <td><input class="me-unit" data-k="${k}" value="${esc(i.unit)}" style="min-width:70px"></td>
@@ -537,7 +538,7 @@ function paintMem() {
       <td style="white-space:nowrap">
         <button class="sm line msave" data-k="${k}">儲存</button>
         <button class="sm line mdel" data-k="${k}">刪除</button></td>
-    </tr>`).join('') : '<tr><td colspan="7">還沒有品項記憶</td></tr>'}</tbody>`;
+    </tr>`).join('') : '<tr><td colspan="6">還沒有品項記憶</td></tr>'}</tbody>`;
 
   const rowOf = (b) => list[Number(b.dataset.k)];
   const val = (cls, k) => $('mtab').querySelector(`.${cls}[data-k="${k}"]`).value.trim();
@@ -553,7 +554,7 @@ function paintMem() {
       }
       b.disabled = true;                      // 後端一趟一兩秒，先鎖住免得連按
       const old = b.textContent; b.textContent = '儲存中…';
-      adm({ op: 'memoryEdit', brand: i.brand, name: i.name, newName: newName, spec: spec, unit: unit },
+      adm({ op: 'memoryEdit', name: i.name, newName: newName, spec: spec, unit: unit },
         '已更新，舊單不受影響（記憶只是下次開單的自動帶入來源）',
         () => { b.disabled = false; b.textContent = old; })
         .then((res) => {
@@ -575,12 +576,11 @@ function paintMem() {
   $('mtab').querySelectorAll('.mdel').forEach((b) => {
     b.onclick = () => {
       const i = rowOf(b);
-      if (!confirm(`刪掉「${i.brand} / ${i.name}」的記憶？舊單不受影響。`)) return;
-      adm({ op: 'memoryDelete', brand: i.brand, name: i.name }, '已刪除');
+      if (!confirm(`刪掉「${i.name}」的記憶？舊單不受影響。`)) return;
+      adm({ op: 'memoryDelete', name: i.name }, '已刪除');
     };
   });
 }
-$('mbrand').onchange = paintMem;
 
 // bindAdmin 隨差異原因清單一起移除（2026-07-31）
 

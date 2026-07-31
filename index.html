@@ -368,7 +368,6 @@ const K_ME = 'mala_transfer_me';
 let NODES = [], MEM = [], REASONS = [], TODAY = '', editingNo = '';
 const shortOf = (name) => (NODES.find((n) => n.name === name) || {}).short || name;
 const brandOfNode = (name) => (NODES.find((n) => n.name === name) || {}).brand || '';
-const HQ_BRAND = '鼎兆元總部';   // 中央廚房掛總部，不是門市品牌
 const BRAND_KEY = { '墨竹亭': 'mozhu', '小辛辣': 'mala', '一悟燒肉': 'yiwu', '鼎兆元總部': 'hq' };
 
 /** 依我所在的門市，把整個 app 換成該品牌的配色（央廚／未設定＝中性藍） */
@@ -378,14 +377,11 @@ function paintTheme() {
   else document.documentElement.removeAttribute('data-brand');
 }
 
-/** 這張單的品項記憶屬於哪個品牌——規則與後端 Code.gs 的 brandOf_ 必須一致 */
-function currentBrand() {
-  const bf = brandOfNode($('from').value), bt = brandOfNode($('to').value);
-  if (bf === HQ_BRAND) return bt;
-  if (bt === HQ_BRAND) return bf;
-  return bf;
-}
-const brandMemory = () => MEM.filter((m) => m.brand === currentBrand());
+/**
+ * 品項記憶**全部門市共用一份、不分品牌**（Eason 2026-07-31 推翻 7/29 的分品牌設計）。
+ * 所以候選清單就是整份 MEM，不再依調出／調入方過濾。
+ */
+const brandMemory = () => MEM;
 
 const $ = (id) => document.getElementById(id);
 // iframe／無痕／file:// 有時會擋 localStorage，擋了就當作沒存，不要讓整個 app 掛掉
