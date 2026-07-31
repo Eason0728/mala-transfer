@@ -290,7 +290,15 @@ function closePop() { $('pop').classList.add('hide'); }
 $('pop').onclick = (e) => { if (e.target.id === 'pop') closePop(); };   // 點外面也關
 document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closePop(); });
 
-/** 點了調出數字之後，在表格下面攤開「調給了誰」 */
+/**
+ * 點了調出總額之後，在表格下面攤開這一店本月調出的內容：
+ * 上半是「調給了誰、幾張、多少錢」，下半是**品項級明細**
+ * （品項名稱／類別／規格／單位／單價／數量／小計，Eason 2026-07-31）。
+ * 品項列取自 RPT.items（就是 Excel「全部明細」那份），靠 shorts 把節點全名對回門市簡稱；
+ * 欄位一律用欄名查索引，不靠位置——欄序改過就錯是這支報表踩過的坑。
+ */
+const NUMCOL = /單價|數量|小計/;   // 這幾欄靠右對齊並套千分位
+
 function showFlow(node) {
   const list = (RPT.flows && RPT.flows[node]) || [];
   const label = (RPT.summary.nodes || []).includes(node)
@@ -298,6 +306,29 @@ function showFlow(node) {
   if (!list.length) { $('flow').innerHTML = ''; return; }
   const sumDocs = list.reduce((s, x) => s + x.docs, 0);
   const sumAmt = list.reduce((s, x) => s + x.amount, 0);
+
+  // 品項明細（舊後端沒有 items／shorts 就只顯示上半部，不要壞掉）
+  let itemsHtml = '';
+  const IT = RPT.items;
+  const src = (RPT.shorts || {})[node];
+  if (IT && src) {
+    const H = IT.headers, ix = (k) => H.indexOf(k);
+    const cols = ['調入門市', '品項名稱', '類別', '規格', '單位', '調撥單價', '應撥數量', '小計'];
+    const rows = IT.rows.filter((r) => String(r[ix('調出門市')]) === src);
+    const tot = rows.reduce((a, r) => a + (Number(r[ix('小計')]) || 0), 0);
+    itemsHtml = rows.length ? `
+      <h3 style="margin-top:14px">調出的品項（${rows.length} 筆）</h3>
+      <div class="scroll"><table>
+        <thead><tr>${cols.map((c) => `<th class="${NUMCOL.test(c) ? 'n' : ''}">${esc(c)}</th>`).join('')}</tr></thead>
+        <tbody>${rows.map((r) => `<tr>${cols.map((c) => {
+          const v = r[ix(c)];
+          const num = NUMCOL.test(c);
+          return `<td class="${num ? 'n' : ''}">${num ? n2(v) : esc(v)}</td>`;
+        }).join('')}</tr>`).join('')}
+          <tr class="total"><td>合計</td>${cols.slice(1, -1).map(() => '<td></td>').join('')}<td class="n">${n2(tot)}</td></tr>
+        </tbody></table></div>` : '';
+  }
+
   $('flow').innerHTML = `
     <h3>${esc(label)} 本月調出去向（${list.length} 家 · ${sumDocs} 張 · ${n2(sumAmt)} 元）
       <button class="sm line" id="flowClose" style="margin-left:8px">收起</button></h3>
@@ -306,7 +337,8 @@ function showFlow(node) {
       <tbody>${list.map((x) => `<tr><td>${esc(x.brand)}</td><td>${esc(x.store)}</td>
         <td class="n">${x.docs}</td><td class="n">${n2(x.amount)}</td></tr>`).join('')}
         <tr class="total"><td>合計</td><td></td><td class="n">${sumDocs}</td><td class="n">${n2(sumAmt)}</td></tr>
-      </tbody></table></div>`;
+      </tbody></table></div>
+    ${itemsHtml}`;
   $('flowClose').onclick = () => { $('flow').innerHTML = ''; };
   $('flow').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
 }
@@ -320,7 +352,8 @@ function paintReport() {
     ${matrixHtml()}
     <h3>每店進出彙總（${esc(RPT.ym)}）</h3>
     <div class="scroll"><table>${tableHtml(s.headers, s.rows, true, s.nodes)}</table></div>
-    <p class="note">調出單數／調出總額有底線的數字可以點，會列出這一店調給了哪幾家門市、各幾張、各多少錢。</p>
+    <p class="note">調出總額有底線的數字可以點，會列出這一店調給了哪幾家門市、各幾張各多少錢，
+    以及<b>調出的每一個品項</b>（類別／規格／單位／單價／數量／小計）。</p>
     <div id="flow"></div>
     <div class="btns">
       <button id="dlx">下載 Excel</button>
