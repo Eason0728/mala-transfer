@@ -517,7 +517,8 @@ function addItem(v) {
         const h = hits[i];
         q('.nm').value = h.name; q('.sp').value = h.spec || ''; q('.un').value = h.unit || '';
         if (!q('.pr').value) q('.pr').value = h.price != null ? h.price : '';
-        setCat(h.cat === '包材' ? '包材' : '食材');   // 記憶帶出類別，帶出來仍可改
+        // 記憶有存類別才帶出來；舊記憶沒有類別就維持不選，不要幫他猜食材
+        setCat(h.cat === '包材' || h.cat === '食材' ? h.cat : '');
         hide(); calc(); saveLocal();
       };
     });
@@ -553,8 +554,16 @@ function calc() {
 }
 
 // ── 表單 ↔ localStorage ───────────────────────────────
+/**
+ * 存草稿到這台手機的格式。**v 是版本戳**：
+ * v2 起「類別」是同仁真的點過的選擇；v2 之前類別是舊版的預設值（一律食材），
+ * 還原時不能當成選過——不然畫面一開就亮著食材，違反「預設不選」（Eason 2026-07-31 回報）。
+ */
+const DRAFT_V = 2;
+
 function readForm() {
   return {
+    v: DRAFT_V,
     editingNo: editingNo,
     from: $('from').value, to: $('to').value, date: $('date').value, eta: $('eta').value,
     packer: $('packer').value, note: $('note').value, items: readItems()
@@ -1073,6 +1082,10 @@ $('packer').addEventListener('click', () => { gotoPage('me'); $('myname').focus(
 
   let saved = null;
   try { saved = JSON.parse(localStorage.getItem(K_DRAFT) || 'null'); } catch (_) { saved = null; }
+  // 舊版草稿（沒有版本戳）裡的類別是當年的預設值不是選擇，一律清掉讓同仁重新點
+  if (saved && !(saved.v >= 2) && Array.isArray(saved.items)) {
+    saved.items.forEach((i) => { delete i.cat; });
+  }
   if (saved) fillForm(saved); else resetForm();
 
   // 還沒設定「我在哪一店」就先帶去設定頁
