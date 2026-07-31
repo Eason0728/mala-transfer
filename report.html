@@ -69,7 +69,7 @@ tr.total td{font-weight:700;background:var(--accent-soft)}
 .mtx td.mx{background:var(--accent-soft)}
 .mtx td.mx0{color:var(--line)}
 .mtx td.mx a{color:var(--accent);text-decoration:underline;cursor:pointer;font-weight:700}
-/* 矩陣格子的彈出視窗（Eason 2026-07-31：點金額看食材／包材各多少） */
+/* 矩陣格子的彈出視窗（Eason 2026-07-31：點金額看各類別金額） */
 .pop{position:fixed;inset:0;background:rgba(20,30,45,.45);display:flex;align-items:center;
      justify-content:center;padding:20px;z-index:50}
 .pop.hide{display:none}
@@ -261,11 +261,11 @@ function matrixHtml() {
   return `<h3>調撥矩陣（${esc(RPT.ym)}　誰調給誰）</h3>
     <div class="scroll"><table class="mtx"><thead>${head}</thead><tbody>${rows}${foot}</tbody></table></div>
     <p class="note">橫的看是「這一店調出去給了誰」，直的看是「這一店收到誰的貨」。格子上面是金額、下面是張數，沒往來就留「—」。
-    <b>點金額</b>會跳出這一格的食材／包材各多少錢。</p>`;
+    <b>點金額</b>會跳出這一格的各類別各多少錢。</p>`;
 }
 
 /**
- * 點矩陣格子的金額 → 彈出視窗，拆這一格的食材／包材金額（Eason 2026-07-31）。
+ * 點矩陣格子的金額 → 彈出視窗，拆這一格的各類別金額（Eason 2026-07-31）。
  * food／pack 由後端 flows 帶來（舊後端沒有就顯示「這版後端沒有拆帳」，不要算出假數字）。
  */
 function showCell(from, to) {
@@ -275,19 +275,22 @@ function showCell(from, to) {
     const i = (RPT.summary.nodes || []).indexOf(n);
     return i >= 0 ? RPT.summary.rows[i].slice(0, 2).join(' ') : n;
   };
-  const split = hit.food !== undefined && hit.pack !== undefined;
-  const other = split ? Math.round((hit.amount - hit.food - hit.pack) * 100) / 100 : 0;
+  // 類別由後端給（RPT.itemCats／hit.cats）——前端不寫死類別名稱，
+  // 這樣以後加第四類（雜貨就是 2026-07-31 這樣加的）前端一行都不用改
+  const cats = hit.cats || null;
+  const names = RPT.itemCats || (cats ? Object.keys(cats) : []);
+  const sum = cats ? names.reduce((a, c) => a + (cats[c] || 0), 0) : 0;
+  const other = cats ? Math.round((hit.amount - sum) * 100) / 100 : 0;
   $('popBox').innerHTML = `
     <h4>${esc(nameOf(from))} → ${esc(nameOf(to))}</h4>
     <div class="sub">${esc(RPT.ym)}　${hit.docs} 張單</div>
-    ${split ? `<dl>
-      <dt>食材</dt><dd>${n2(hit.food)}</dd>
-      <dt>包材</dt><dd>${n2(hit.pack)}</dd>
+    ${cats ? `<dl>
+      ${names.map((c) => `<dt>${esc(c)}</dt><dd>${n2(cats[c] || 0)}</dd>`).join('')}
       ${other ? `<dt>未分類</dt><dd>${n2(other)}</dd>` : ''}
       <div class="ln"></div>
       <dt>合計</dt><dd>${n2(hit.amount)}</dd>
     </dl>` : `<dl><dt>合計</dt><dd>${n2(hit.amount)}</dd></dl>
-      <p class="note">這版後端還沒有食材／包材拆帳，重新產一次月報就會有。</p>`}
+      <p class="note">這版後端還沒有類別拆帳，重新產一次月報就會有。</p>`}
     <div class="btns"><button id="popClose">關閉</button></div>`;
   $('pop').classList.remove('hide');
   $('popClose').onclick = closePop;

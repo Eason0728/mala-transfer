@@ -131,8 +131,9 @@ select{background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/
 }
 .item .del:active{background:var(--line)}
 .item .nmwrap{position:relative;margin-bottom:10px;padding-right:34px}
-/* 類別二選一（食材／包材，Eason 2026-07-31）：做成兩顆大按鈕，店員戴手套也點得到 */
-.cats{display:flex;gap:8px}
+/* 類別三選一（食材／包材／雜貨）：大按鈕，店員戴手套也點得到。
+   三顆在 390px 寬還放得下；字級略縮一點避免換行 */
+.cats{display:flex;gap:6px}
 .cats button{flex:1;font:inherit;font-size:14px;padding:9px 0;border-radius:10px;
   border:1px solid var(--line);background:var(--panel);color:var(--dim);cursor:pointer}
 .cats button.on{border-color:var(--accent);color:var(--accent);background:var(--accent-soft);font-weight:700}
@@ -441,6 +442,8 @@ const K_ME = 'mala_transfer_me';
 
 // NODES 是 [{name, short, code}]，全名進資料庫、短名給手機畫面用
 let NODES = [], MEM = [], REASONS = [], TODAY = '', editingNo = '';
+// 類別清單（與後端 ITEM_CATS 同一份語意）：加類別時這裡與 HTML 的三顆按鈕一起改
+const ITEM_CATS = ['食材', '包材', '雜貨'];
 const shortOf = (name) => (NODES.find((n) => n.name === name) || {}).short || name;
 const brandOfNode = (name) => (NODES.find((n) => n.name === name) || {}).brand || '';
 const BRAND_KEY = { '墨竹亭': 'mozhu', '小辛辣': 'mala', '一悟燒肉': 'yiwu', '鼎兆元總部': 'hq' };
@@ -565,6 +568,7 @@ function addItem(v) {
       <div class="cats">
         <button type="button" data-v="食材">食材</button>
         <button type="button" data-v="包材">包材</button>
+        <button type="button" data-v="雜貨">雜貨</button>
       </div>
     </div>
     <div class="two">
@@ -589,7 +593,7 @@ function addItem(v) {
     d.dataset.cat = val || '';
     d.querySelectorAll('.cats button').forEach((b) => b.classList.toggle('on', b.dataset.v === val));
   };
-  setCat(v.cat === '包材' || v.cat === '食材' ? v.cat : '');
+  setCat(ITEM_CATS.indexOf(v.cat) >= 0 ? v.cat : '');
   d.querySelectorAll('.cats button').forEach((b) => {
     b.onclick = () => {
       setCat(b.dataset.v);
@@ -621,7 +625,7 @@ function addItem(v) {
         q('.nm').value = h.name; q('.sp').value = h.spec || ''; q('.un').value = h.unit || '';
         if (!q('.pr').value) q('.pr').value = h.price != null ? h.price : '';
         // 記憶有存類別才帶出來；舊記憶沒有類別就維持不選，不要幫他猜食材
-        setCat(h.cat === '包材' || h.cat === '食材' ? h.cat : '');
+        setCat(ITEM_CATS.indexOf(h.cat) >= 0 ? h.cat : '');
         hide(); calc(); saveLocal();
       };
     });
@@ -749,7 +753,7 @@ function validateForm() {
     if (!nm.value.trim()) { nm.classList.add('bad'); probs.push('品項名稱要填'); }
     if (!(Number(pr.value) > 0)) { pr.classList.add('bad'); probs.push('單價要填，且大於 0'); }
     if (!(Number(qt.value) > 0)) { qt.classList.add('bad'); probs.push('數量要填，且大於 0'); }
-    if (!d.dataset.cat) { d.querySelector('.cats').classList.add('bad'); probs.push('類別要選食材或包材'); }
+    if (!d.dataset.cat) { d.querySelector('.cats').classList.add('bad'); probs.push('類別要選一個'); }
     if (!probs.length) return;
     const why = d.querySelector('.why');
     why.textContent = probs.join('　·　');
