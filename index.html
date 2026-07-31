@@ -73,6 +73,8 @@ header{
   border:1px solid var(--line);border-radius:999px;padding:3px 9px;white-space:nowrap;background:var(--panel);
 }
 .acct:active{background:var(--accent-soft)}
+a.btn.guide{display:block;text-align:center;text-decoration:none;color:var(--accent);
+  border-color:var(--accent);font-weight:600}
 .logo{font-size:18px;font-weight:800;letter-spacing:.03em;white-space:nowrap}
 .logo b{color:var(--dim);font-weight:400;margin:0 1px}
 .chip{
@@ -337,6 +339,12 @@ nav svg{width:22px;height:22px;stroke:currentColor;fill:none;stroke-width:1.7;st
         <h2>我的名字</h2>
         <div class="f"><input id="myname" placeholder="例如：阿明"></div>
         <p class="note">開單的「打包人」就是這個名字（打包人＝我的名字，不用另外填）。</p>
+      </div>
+      <!-- 操作說明：同仁不用回去翻 LINE 訊息找連結（Eason 2026-07-31） -->
+      <div class="card">
+        <h2>操作說明</h2>
+        <a class="btn line guide" href="guide.html" target="_blank" rel="noopener">看圖解操作說明 ›</a>
+        <p class="note">開單、確認出貨、簽收怎麼做，一步一張圖。</p>
       </div>
     </section>
   </main>
