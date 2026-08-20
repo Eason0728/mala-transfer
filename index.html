@@ -260,6 +260,31 @@ nav svg{width:22px;height:22px;stroke:currentColor;fill:none;stroke-width:1.7;st
 .dc .r2 .gap{margin-left:6px}
 .dc .r3{font-size:11.5px;color:var(--dim);opacity:.72;margin-top:3px;font-variant-numeric:tabular-nums}
 .none{color:var(--dim);font-size:13.5px;padding:6px 0}
+
+/* ── 總覽（總部管理，2026-08-20）──────────────────────
+   唯讀畫面，資訊密度優先：不加插圖、不加色塊裝飾，紅色只留給逾期 */
+.ovnums{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-top:12px}
+.ovnums>div{background:var(--head);border-radius:10px;padding:9px 4px;text-align:center}
+.ovnums b{display:block;font-size:21px;line-height:1.25}
+.ovnums span{font-size:11px;color:var(--dim)}
+.ovnums>div.hot b{color:var(--danger)}
+/* 兩行式：第一行單號＋標籤、第二行「A → B」＋金額。
+   一行擠下四樣東西的話，逾期那幾列會把調入方截掉（…）或逐字斷成直排——
+   而「要催哪一家」正是逾期最關鍵的資訊，不能被擠掉（2026-08-20 看截圖修的） */
+.ovrow{display:block;padding:10px 0;border-bottom:1px solid var(--line);cursor:pointer}
+.ovrow:last-child{border-bottom:0}
+.ovrow .l1{display:flex;gap:8px;align-items:center}
+.ovrow .l2{display:flex;gap:8px;align-items:baseline;margin-top:2px}
+.ovrow .no{font-weight:600;font-size:13px}
+.ovrow .way{color:var(--dim);font-size:12.5px;flex:1;min-width:0}
+.ovrow .amt{font-size:12.5px;color:var(--dim);white-space:nowrap}
+.ovnode{padding:11px 0;border-bottom:1px solid var(--line)}
+.ovnode:last-child{border-bottom:0}
+.ovnode .hd{font-weight:600;font-size:14.5px}
+.ovnode .sub{color:var(--dim);font-size:12.5px;padding:3px 0 2px}
+.ovfeed{padding:8px 0;border-bottom:1px solid var(--line);font-size:13px;cursor:pointer}
+.ovfeed:last-child{border-bottom:0}
+.ovfeed .t{color:var(--dim);font-size:12px}
 </style>
 </head>
 <body>
@@ -433,6 +458,29 @@ nav svg{width:22px;height:22px;stroke:currentColor;fill:none;stroke-width:1.7;st
       <div id="qlist"></div>
     </section>
 
+    <!-- ⑤ 總覽（總部管理限定，Eason 2026-08-20）：一個畫面看完十一個節點卡在哪。
+         **唯讀**——這裡任何一列都只能點開看，不提供動作鈕（後端也會擋，見 writeStore_）-->
+    <section class="page" id="p-admin">
+      <div class="card">
+        <h2>全門市總覽</h2>
+        <div class="ovnums" id="ovNums"></div>
+        <div class="msg" id="ovMsg"></div>
+        <div class="acts"><button class="btn line" id="ovRefresh">重新整理</button></div>
+      </div>
+      <div class="card">
+        <h2>逾期未簽收</h2>
+        <div id="ovOverdue"><div class="none">載入中…</div></div>
+      </div>
+      <div class="card">
+        <h2>各門市卡關</h2>
+        <div id="ovStuck"></div>
+      </div>
+      <div class="card">
+        <h2>今日動態</h2>
+        <div id="ovFeed"></div>
+      </div>
+    </section>
+
     <!-- 單據詳情（不在頁籤上，從查單或存檔訊息進來）-->
     <section class="page" id="p-doc"></section>
 
@@ -480,6 +528,8 @@ nav svg{width:22px;height:22px;stroke:currentColor;fill:none;stroke-width:1.7;st
 
 <nav>
   <div class="in">
+    <!-- 總覽：只有總部管理帳號看得到，applyRole() 控制顯示（Eason 2026-08-20）-->
+    <button data-p="admin" style="display:none"><svg viewBox="0 0 24 24"><path d="M4 19V9M9.3 19V5M14.7 19v-7M20 19v-4"/></svg>總覽</button>
     <button class="on" data-p="new"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>開單</button>
     <button data-p="todo"><svg viewBox="0 0 24 24"><path d="M9 11l3 3 8-8M20 12v6a2 2 0 01-2 2H6a2 2 0 01-2-2V6a2 2 0 012-2h9"/></svg>待辦</button>
     <button data-p="find"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>查單</button>
@@ -531,17 +581,27 @@ const viewCode = () => { try { return localStorage.getItem(K_VIEW) || ''; } catc
 const setViewCode = (v) => lsSet(K_VIEW, v);
 const clearViewCode = () => lsDel(K_VIEW);
 
+/**
+ * 總部管理帳號（Eason 2026-08-20）：**唯讀**，看得到十一個節點的調撥狀態，一個字都不能改。
+ * 它不是節點，所以**不進開單的調出／調入下拉、也不進查單的門市篩選**——只出現在登入頁的帳號下拉。
+ */
+const ADMIN_NODE = '總部管理';
+const isAdmin = () => ((auth() || {}).node === ADMIN_NODE);
+
 // 需要帶 token 的寫入 action（與後端 spec §4.3 同一份名單）
 const AUTH_ACTIONS = ['createDraft', 'updateDraft', 'ship', 'receive', 'amend', 'deleteDoc'];
 // 讀取 action：已登入自動帶 token（無感）；沒登入帶檢視碼，沒有／錯了就跳輸入框問（Eason 2026-07-31）
 const VIEW_ACTIONS = ['getDoc', 'listDocs', 'bootstrap'];
+// 總覽：只認總部管理的 token（後端連門市 token 與檢視碼都擋，所以不併進 VIEW_ACTIONS）
+const ADMIN_ACTIONS = ['adminOverview'];
 
 async function post(action, payload) {
   // 最多重試幾次（每次是「使用者被問了一次檢視碼」），不是真的無限迴圈
   for (let attempt = 0; attempt < 5; attempt++) {
     const a = auth();
     let p = payload;
-    if (a && (AUTH_ACTIONS.indexOf(action) >= 0 || VIEW_ACTIONS.indexOf(action) >= 0)) {
+    if (a && (AUTH_ACTIONS.indexOf(action) >= 0 || VIEW_ACTIONS.indexOf(action) >= 0
+      || ADMIN_ACTIONS.indexOf(action) >= 0)) {
       p = Object.assign({}, payload, { token: a.token });
     } else if (!a && VIEW_ACTIONS.indexOf(action) >= 0) {
       const vc = viewCode();
@@ -919,7 +979,8 @@ function routeGate(mustChangePin) {
   const a = auth();
   if (!a) return showGate('login');
   if (mustChangePin) return showGate('pin');
-  if (!a.name) return showGate('name');
+  // 名字是給打包人／簽收人用的，唯讀的總部管理不會寫任何欄位，不必問（問了也沒地方用）
+  if (!a.name && !isAdmin()) return showGate('name');
   showGate('');
   enterApp();
   return undefined;
@@ -1055,8 +1116,9 @@ function renderDoc() {
   const canShip = st === '草稿' && mine === d['調出方'];
   const canRecv = st === '已出貨' && mine === d['調入方'];
   // 已簽收即鎖定（Eason 2026-07-29 推翻「簽收後仍可修改」），只有已出貨能修改
-  const canAmend = st === '已出貨';
-  const canDelete = st !== '已刪除';   // 所有單據都有刪除選項（軟刪除，會留紀錄）
+  // 總部管理是唯讀的：後端六支寫入 API 都會回 READONLY，畫面上就不該出現按了會失敗的鈕
+  const canAmend = !isAdmin() && st === '已出貨';
+  const canDelete = !isAdmin() && st !== '已刪除';   // 所有單據都有刪除選項（軟刪除，會留紀錄）
   const editing = MODE === 'receive' || MODE === 'amend';
 
   const time = (v) => v ? String(v).slice(5, 16).replace('T', ' ') : '';
@@ -1268,12 +1330,26 @@ async function refreshMemory() {
 }
 
 // ── 啟動 ──────────────────────────────────────────────
+/**
+ * 依身分決定底部分頁：門市＝開單／待辦／查單／店別；總部管理＝總覽／查單／店別。
+ * 唯讀帳號不給開單與門市待辦的入口——那兩頁對它沒有意義，後端也會擋（READONLY）。
+ */
+function applyRole() {
+  const ad = isAdmin();
+  const show = (pg, on) => {
+    const b = document.querySelector('nav button[data-p="' + pg + '"]');
+    if (b) b.style.display = on ? '' : 'none';
+  };
+  show('admin', ad); show('new', !ad); show('todo', !ad);
+}
+
 function gotoPage(p) {
   document.querySelectorAll('nav button').forEach((x) => x.classList.toggle('on', x.dataset.p === p));
   document.querySelectorAll('.page').forEach((s) => s.classList.toggle('on', s.id === 'p-' + p));
   $('bar').style.display = p === 'new' ? '' : 'none';
   window.scrollTo(0, 0);
   if (p === 'todo') loadTodo();
+  if (p === 'admin') loadOverview();
 }
 document.querySelectorAll('nav button').forEach((b) => { b.onclick = () => gotoPage(b.dataset.p); });
 // ── 單據卡片列表（T4-2 / T4-3）────────────────────────
@@ -1444,6 +1520,112 @@ $('skipLoginBtn').onclick = (e) => {
   gotoPage('find');
 };
 
+// ── 總覽（總部管理，唯讀）──────────────────────────────
+/**
+ * 三塊（Eason 2026-08-20 選定）：逾期未簽收／各門市卡關／今日動態。
+ * 全部資料來自後端 adminOverview 一支 API——**前端不自己算**，
+ * 尤其逾期天數：後端與門市端橫幅用同一條規則（當天到期不算逾期），
+ * 在這裡另外算一次的話，同一張單在總部與門市會顯示不同天數。
+ */
+async function loadOverview() {
+  const msg = $('ovMsg');
+  msg.className = 'msg';
+  msg.textContent = '';
+  $('ovOverdue').innerHTML = '<div class="none">載入中…</div>';
+  $('ovStuck').innerHTML = ''; $('ovFeed').innerHTML = '';
+  let res;
+  try { res = await post('adminOverview', {}); }
+  catch (_) { res = { ok: false, error: '連不到後端，檢查一下網路。' }; }
+  if (!res.ok) {
+    msg.className = 'msg err';
+    msg.textContent = res.error || '讀不到總覽。';
+    $('ovOverdue').innerHTML = '';
+    return;
+  }
+  renderOverview(res.data);
+}
+
+function ovRow(x, tag) {
+  const late = x['逾期天數'] > 0
+    ? `<span class="pill" style="background:var(--danger)">${tag ? esc(tag) + '・' : ''}逾期 ${x['逾期天數']} 天</span>` : '';
+  return `<div class="ovrow" data-no="${esc(x['單號'])}">
+    <div class="l1"><span class="no">${esc(x['單號'])}</span>${late}</div>
+    <div class="l2"><span class="way">${esc(x['調出簡稱'])} → ${esc(x['調入簡稱'])}</span>
+      <span class="amt">$${money(x['應撥總額'] || 0)}</span></div></div>`;
+}
+
+function ovNodeBlock(n) {
+  const bits = [];
+  if (n['草稿未出貨'].length) bits.push(`開了還沒出貨 ${n['草稿未出貨'].length} 張`);
+  if (n['已出貨未簽收'].length) bits.push(`出了對方還沒簽收 ${n['已出貨未簽收'].length} 張`);
+  // 逾期張數是掛在「調入方」頭上的（＝該簽收卻還沒簽），跟上面兩項的角度不同，文案要講清楚
+  if (n['逾期張數']) bits.push(`<b style="color:var(--danger)">等這家簽收而逾期 ${n['逾期張數']} 張</b>`);
+  // 三份清單都要列得出來：只欠簽收的門市如果只顯示一行字、點不進任何單，
+  // 打電話的人就得自己回頭去逾期區找單號（2026-08-20 看版面才發現）
+  const waiting = (n['等它簽收逾期'] || []).map((x) => ovRow(x, '待簽')).join('');
+  const rows = n['草稿未出貨'].concat(n['已出貨未簽收']).map((x) => ovRow(x)).join('');
+  return `<div class="ovnode"><div class="hd">${esc(n['簡稱'])}</div>
+    <div class="sub">${bits.join('・')}</div>${waiting}${rows}</div>`;
+}
+
+function ovFeedRow(f) {
+  const way = f['調出簡稱'] ? `${esc(f['調出簡稱'])} → ${esc(f['調入簡稱'])}｜` : '';
+  // 操作人存的是「店簡稱｜姓名」，但店名前面 way 已經寫過一次了——整串照印會變成
+  // 「中央廚房 → 墨·光復｜中央廚房｜阿明」，同一個店名在一行裡出現兩次
+  const raw = String(f['操作人'] || '');
+  const who = raw.indexOf('｜') >= 0 ? raw.split('｜').slice(1).join('｜') || raw : raw;
+  return `<div class="ovfeed" data-no="${esc(f['單號'])}">
+    <span class="t">${esc(String(f['時間'] || '').slice(11, 16))}</span>
+    <b>${esc(f['動作'])}</b> ${esc(f['單號'])}
+    <span class="t">${way}${esc(who)}</span></div>`;
+}
+
+function renderOverview(d) {
+  const t = d.totals || {};
+  $('ovNums').innerHTML = [
+    ['開了沒出貨', t['草稿未出貨'], false],
+    ['出了沒簽收', t['已出貨未簽收'], false],
+    ['逾期', t['逾期'], (t['逾期'] || 0) > 0],
+    ['今日異動', t['今日異動'], false]
+  ].map((x) => `<div class="${x[2] ? 'hot' : ''}"><b>${x[1] || 0}</b><span>${x[0]}</span></div>`).join('');
+
+  const ovd = d.overdue || [];
+  // ⚠️ 一律包一層箭頭函式：直接寫 .map(ovRow) 會把陣列 index 當成第二個參數（tag）傳進去，
+  // 標籤就會印成「1・逾期 1 天」（2026-08-20 看截圖才發現）
+  $('ovOverdue').innerHTML = ovd.length ? ovd.map((x) => ovRow(x)).join('')
+    : '<div class="none">目前沒有逾期的單。</div>';
+
+  // 卡關看板只列真的有卡住的門市——十一家全列出來、其中八家是空的，反而看不到重點。
+  // ⚠️ 逾期張數一定要算進「有卡住」：一家店可能自己沒開單也沒出貨，只是**該簽收卻沒簽**，
+  // 那正是最該被催的那家，漏掉它整個看板就白做了（2026-08-20 本機驗收踩到）
+  const stuck = (d.nodes || []).filter((n) =>
+    n['草稿未出貨'].length || n['已出貨未簽收'].length || n['逾期張數']);
+  $('ovStuck').innerHTML = stuck.length ? stuck.map(ovNodeBlock).join('')
+    : '<div class="none">十一個節點都沒有卡住的單。</div>';
+
+  // 今日動態預設只鋪前 10 筆：正式環境一天幾十筆，整串印出來會把前面三塊擠到看不見
+  const feed = d.feed || [];
+  const FEED_SHOW = 10;
+  if (!feed.length) {
+    $('ovFeed').innerHTML = '<div class="none">今天還沒有人動過任何單據。</div>';
+  } else {
+    const head = feed.slice(0, FEED_SHOW).map(ovFeedRow).join('');
+    const more = feed.length > FEED_SHOW
+      ? `<div class="acts"><button class="btn line" id="ovFeedMore">顯示其餘 ${feed.length - FEED_SHOW} 筆</button></div>`
+      : '';
+    $('ovFeed').innerHTML = head + more;
+    const btn = $('ovFeedMore');
+    if (btn) btn.onclick = () => { $('ovFeed').innerHTML = feed.map(ovFeedRow).join(''); };
+  }
+}
+
+// 總覽任何一列都能點開看單據詳情（唯讀）。事件委派綁在頁面上，重新整理後不用再綁一次
+$('p-admin').addEventListener('click', (e) => {
+  const row = e.target.closest('[data-no]');
+  if (row && row.dataset.no) openDoc(row.dataset.no);
+});
+$('ovRefresh').onclick = () => loadOverview();
+
 // 登出：清掉登入與名字，**草稿留著**（同仁打的東西不能因為登出就消失）
 $('logoutBtn').onclick = () => {
   if (!confirm('登出後要重新選門市、輸密碼、填名字。確定登出？')) return;
@@ -1451,6 +1633,7 @@ $('logoutBtn').onclick = () => {
   GATE_PIN = '';
   lsDel(K_ME);
   $('overdueBar').classList.add('hide');
+  applyRole();          // 清掉登入後 isAdmin() 就是 false，分頁要跟著還原
   showGate('login');
 };
 
@@ -1490,8 +1673,15 @@ $('cpBtn').onclick = async () => {
   }
 
   // 登入畫面的門市下拉（帳號＝店別，D1）
+  // 帳號下拉＝十一個門市。**總部管理平常不出現**（Eason 2026-08-20：不要讓門市看到），
+  // 網址帶 ?hq 才長出來並自動選好——例 …/mala-transfer/?hq
+  // ⚠️ 這是「別放在大家眼前」，**不是**安全機制：擋住未授權的是密碼，不是這個參數。
+  // 已登入的管理帳號完全不受影響（身分記在 localStorage，不必每次帶參數）。
+  const wantHQ = /(^|[?&#])hq(=|&|$)/i.test(location.search + location.hash);
   $('gnode').innerHTML = '<option value="">請選門市</option>' +
-    NODES.map((n) => `<option value="${n.name}">${n.short}</option>`).join('');
+    NODES.map((n) => `<option value="${n.name}">${n.short}</option>`).join('') +
+    (wantHQ ? `<option value="${ADMIN_NODE}">總部管理（唯讀）</option>` : '');
+  if (wantHQ) $('gnode').value = ADMIN_NODE;
   $('glogo').src = document.querySelector('link[rel="apple-touch-icon"]').href;
   $('qnode').innerHTML = '<option value="">全部門市</option>' +
     NODES.map((n) => `<option value="${n.name}">${n.short}</option>`).join('');
@@ -1521,6 +1711,16 @@ $('cpBtn').onclick = async () => {
 function enterApp() {
   const a = auth();
   if (!a) return;
+  applyRole();
+  // 總部管理：唯讀，不碰開單表單、不查門市版逾期橫幅（總覽自己就有全集團的逾期）
+  if (isAdmin()) {
+    lsSet(K_LAST_NODE, a.node);
+    setMe({ node: a.node, name: a.name || '' });
+    paintMe();
+    $('overdueBar').classList.add('hide');
+    gotoPage('admin');
+    return;
+  }
   // 換店偵測（Eason 2026-07-31 裁決）：上次記得的店跟這次登入的不同 →
   // 開單表單／草稿是別家店留下的，先清乾淨再套新身分。同一店重複登入不清；
   // 還在編輯既有草稿（editingNo）時維持原邏輯，不因換店被打斷。
