@@ -309,8 +309,6 @@ nav svg{width:22px;height:22px;stroke:currentColor;fill:none;stroke-width:1.7;st
         <!-- 會計沒有門市帳號，所以入口一定要放在登入頁：否則會計得先借某店的密碼登入
              才看得到 app 抬頭那個連結（2026-07-31 加登入後造成的死路）-->
         <p class="gfoot">會計對帳請走 <a href="report.html">會計專區 ›</a></p>
-        <!-- 只想查單不開單：免登入，帶檢視碼即可查（Eason 2026-07-31 裁決，讀取憑證三擇一）-->
-        <p class="gfoot"><a id="skipLoginBtn">只想查單？略過登入 ›</a></p>
       </div>
 
       <!-- ② 強制改密碼（密碼還是 0000 時） -->
@@ -335,11 +333,12 @@ nav svg{width:22px;height:22px;stroke:currentColor;fill:none;stroke-width:1.7;st
     </div>
   </div>
 
-  <!-- 輕量輸入框（風格照登入閘門）：未登入查資料要的檢視碼、刪已簽收單要的會計密碼共用（Eason 2026-07-31）-->
+  <!-- 輕量輸入框（風格照登入閘門）：刪已簽收單要的會計密碼。標題與說明由 askSecret() 呼叫時帶入，
+       HTML 這兩行只是預設值。原本另一個用途「未登入查單的檢視碼」已於 2026-08-20 裁撤 -->
   <div class="gate hide" id="inputGate" style="z-index:110">
     <div class="gbox">
-      <h1 class="gtitle" id="inputTitle">輸入檢視碼</h1>
-      <p class="gsub" id="inputSub">要查看資料請先輸入檢視碼</p>
+      <h1 class="gtitle" id="inputTitle">請輸入密碼</h1>
+      <p class="gsub" id="inputSub"></p>
       <div class="f"><input id="inputField" type="password" inputmode="numeric" autocomplete="off"></div>
       <div class="msg" id="inputMsg"></div>
       <button class="btn" id="inputOkBtn">確定</button>
@@ -569,18 +568,12 @@ const brandMemory = () => MEM;
 
 const K_AUTH = 'mala_transfer_auth';
 const AUTH_V = 1;
-const K_VIEW = 'mala_transfer_view';   // 未登入時的檢視碼（讀取 API 三擇一憑證之一，Eason 2026-07-31）
 
 const $ = (id) => document.getElementById(id);
 // iframe／無痕／file:// 有時會擋 localStorage，擋了就當作沒存，不要讓整個 app 掛掉
 const lsSet = (k, v) => { try { localStorage.setItem(k, v); } catch (_) { /* 存不了就算了 */ } };
 const lsDel = (k) => { try { localStorage.removeItem(k); } catch (_) { /* 同上 */ } };
 const money = (n) => (Math.round(n * 100) / 100).toLocaleString('zh-TW');
-// 檢視碼**絕對不能寫死在這支檔案裡**（會進公開 repo）：只能來自使用者輸入，存 localStorage 帶著走
-const viewCode = () => { try { return localStorage.getItem(K_VIEW) || ''; } catch (_) { return ''; } };
-const setViewCode = (v) => lsSet(K_VIEW, v);
-const clearViewCode = () => lsDel(K_VIEW);
-
 /**
  * 總部管理帳號（Eason 2026-08-20）：**唯讀**，看得到十一個節點的調撥狀態，一個字都不能改。
  * 它不是節點，所以**不進開單的調出／調入下拉、也不進查單的門市篩選**——只出現在登入頁的帳號下拉。
@@ -588,55 +581,35 @@ const clearViewCode = () => lsDel(K_VIEW);
 const ADMIN_NODE = '總部管理';
 const isAdmin = () => ((auth() || {}).node === ADMIN_NODE);
 
-// 需要帶 token 的寫入 action（與後端 spec §4.3 同一份名單）
-const AUTH_ACTIONS = ['createDraft', 'updateDraft', 'ship', 'receive', 'amend', 'deleteDoc'];
-// 讀取 action：已登入自動帶 token（無感）；沒登入帶檢視碼，沒有／錯了就跳輸入框問（Eason 2026-07-31）
-const VIEW_ACTIONS = ['getDoc', 'listDocs', 'bootstrap'];
-// 總覽：只認總部管理的 token（後端連門市 token 與檢視碼都擋，所以不併進 VIEW_ACTIONS）
-const ADMIN_ACTIONS = ['adminOverview'];
+/**
+ * 2026-08-20 訪客查單裁撤後，前端不必再分「寫入 action／讀取 action」兩份名單：
+ * **只要登入了就一律帶 token**（login／changeStorePin 帶了後端也不看，無害），
+ * 沒登入就什麼都不帶——後端該擋的自己會擋。少一份名單就少一個「新增 API 忘了加進去」的坑。
+ */
 
 async function post(action, payload) {
-  // 最多重試幾次（每次是「使用者被問了一次檢視碼」），不是真的無限迴圈
-  for (let attempt = 0; attempt < 5; attempt++) {
-    const a = auth();
-    let p = payload;
-    if (a && (AUTH_ACTIONS.indexOf(action) >= 0 || VIEW_ACTIONS.indexOf(action) >= 0
-      || ADMIN_ACTIONS.indexOf(action) >= 0)) {
-      p = Object.assign({}, payload, { token: a.token });
-    } else if (!a && VIEW_ACTIONS.indexOf(action) >= 0) {
-      const vc = viewCode();
-      if (vc) p = Object.assign({}, payload, { view_code: vc });
-    }
-    const body = JSON.stringify({ action, payload: p });
-    let out;
-    // 單機測試版（tools/build-standalone.js 產生的單一檔案）會塞一個本機後端進來，
-    // 這時直接呼叫它，不走網路。正式版沒有這個變數，照常打 API。
-    if (window.__LOCAL_BACKEND__) {
-      out = JSON.parse(window.__LOCAL_BACKEND__(body));
-    } else {
-      const r = await fetch(API, {
-        method: 'POST',
-        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-        body: body
-      });
-      out = await r.json();
-    }
-    // 登入失效（例如 Eason 換了 token_secret）→ 回登入畫面，但**草稿絕不清掉**
-    if (out && out.ok === false && out.code === 'UNAUTHORIZED') {
-      clearAuth();
-      showGate('login', '登入已失效，請重新登入');
-      return out;
-    }
-    // 沒登入、讀取 API 要檢視碼：跳輸入框問，存起來重試；再錯就清掉重問
-    if (out && out.ok === false && out.code === 'VIEW_REQUIRED' && !a) {
-      const input = await askViewCode(attempt > 0 ? '檢視碼不對，請再輸入一次。' : '');
-      if (input == null) { clearViewCode(); return out; }   // 使用者取消／沒填，不重試
-      setViewCode(input);
-      continue;
-    }
-    return out;
+  const a = auth();
+  const p = a ? Object.assign({}, payload, { token: a.token }) : payload;
+  const body = JSON.stringify({ action, payload: p });
+  let out;
+  // 單機測試版（tools/build-standalone.js 產生的單一檔案）會塞一個本機後端進來，
+  // 這時直接呼叫它，不走網路。正式版沒有這個變數，照常打 API。
+  if (window.__LOCAL_BACKEND__) {
+    out = JSON.parse(window.__LOCAL_BACKEND__(body));
+  } else {
+    const r = await fetch(API, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: body
+    });
+    out = await r.json();
   }
-  return { ok: false, error: '重試太多次，請稍後再試。', code: 'VIEW_REQUIRED' };
+  // 登入失效（例如 Eason 換了 token_secret）或根本沒登入 → 回登入畫面，但**草稿絕不清掉**
+  if (out && out.ok === false && out.code === 'UNAUTHORIZED') {
+    clearAuth();
+    showGate('login', a ? '登入已失效，請重新登入' : '請先登入');
+  }
+  return out;
 }
 
 function say(kind, html) {
@@ -970,10 +943,6 @@ function askSecret(title, sub, errMsg) {
     $('inputField').onkeydown = (e) => { if (e.key === 'Enter') ok(); };
   });
 }
-function askViewCode(errMsg) {
-  return askSecret('輸入檢視碼', '要查看資料請先輸入檢視碼', errMsg);
-}
-
 /** 決定現在該停在哪一關；三關都過就進 app */
 function routeGate(mustChangePin) {
   const a = auth();
@@ -1512,14 +1481,6 @@ $('gpin').addEventListener('keydown', (e) => { if (e.key === 'Enter') doLogin();
 $('gpinBtn').onclick = doChangePinGate;
 $('gnameBtn').onclick = doSaveName;
 $('gname').addEventListener('keydown', (e) => { if (e.key === 'Enter') doSaveName(); });
-// 只想查單、不開單：略過登入直接進 app（唯讀查詢改用檢視碼，Eason 2026-07-31 裁決）
-$('skipLoginBtn').onclick = (e) => {
-  e.preventDefault();
-  showGate('');
-  paintMe();
-  gotoPage('find');
-};
-
 // ── 總覽（總部管理，唯讀）──────────────────────────────
 /**
  * 三塊（Eason 2026-08-20 選定）：逾期未簽收／各門市卡關／今日動態。
