@@ -10,6 +10,10 @@
 <!-- 調撥 icon -->
 
 <title>鼎兆元調撥系統 — 會計專區</title>
+<script>
+/* 嵌入管理系統（?embed=dzy 且在 iframe 內）時先打旗標，header／gate 一開始就不畫，避免閃一下 */
+try { if (new URLSearchParams(location.search).get('embed') === 'dzy' && window.parent !== window) document.documentElement.classList.add('emb'); } catch (e) {}
+</script>
 <style>
 :root{
   color-scheme:light;
@@ -84,6 +88,44 @@ tr.total td{font-weight:700;background:var(--accent-soft)}
 a.flow{color:var(--accent);text-decoration:underline;cursor:pointer;font-weight:600}
 .note{font-size:12px;color:var(--dim);margin-top:10px;line-height:1.65}
 .hide{display:none}
+/* ── 嵌入模式（管理系統 → 財務部門 → 調撥管理）：藏標題區與密碼閘 ── */
+.emb header,.emb #gate{display:none}
+.emb body{padding-top:16px}
+/* ── 卡關總覽（從門市版 index.html 搬來，唯讀；只在嵌入模式出現）── */
+.none{color:var(--dim);font-size:13.5px;padding:6px 0}
+.pill{margin-left:auto;font-size:12px;font-weight:700;border-radius:999px;padding:4px 11px;color:#fff;white-space:nowrap}
+.ovnums{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-top:12px}
+.ovnums>div{background:var(--head);border-radius:10px;padding:9px 4px;text-align:center}
+.ovnums b{display:block;font-size:21px;line-height:1.25}
+.ovnums span{font-size:11px;color:var(--dim)}
+.ovnums>div.hot b{color:var(--danger)}
+/* 兩行式：第一行單號＋標籤、第二行「A → B」＋金額（一行塞四樣東西會把調入方擠掉） */
+.ovrow{display:block;padding:10px 0;border-bottom:1px solid var(--line);cursor:pointer}
+.ovrow:last-child{border-bottom:0}
+.ovrow .l1{display:flex;gap:8px;align-items:center}
+.ovrow .l2{display:flex;gap:8px;align-items:baseline;margin-top:2px}
+.ovrow .no{font-weight:600;font-size:13px}
+.ovrow .way{color:var(--dim);font-size:12.5px;flex:1;min-width:0}
+.ovrow .amt{font-size:12.5px;color:var(--dim);white-space:nowrap}
+.ovnode{padding:11px 0;border-bottom:1px solid var(--line)}
+.ovnode:last-child{border-bottom:0}
+.ovnode .hd{font-weight:600;font-size:14.5px}
+.ovnode .sub{color:var(--dim);font-size:12.5px;padding:3px 0 2px}
+.ovfeed{padding:8px 0;border-bottom:1px solid var(--line);font-size:13px;cursor:pointer}
+.ovfeed:last-child{border-bottom:0}
+.ovfeed .t{color:var(--dim);font-size:12px}
+/* 單據唯讀明細彈窗（寬版） */
+.pop .box.wide{max-width:680px;max-height:86vh;overflow:auto}
+/* 嵌入時 iframe 比手機螢幕高，置中會把關閉鈕推到螢幕外：改靠上、矮一點 */
+.emb .pop{align-items:flex-start}
+.emb .pop .box.wide{max-height:70vh}
+.pop .kv{display:grid;grid-template-columns:auto 1fr;gap:5px 14px;font-size:14px;margin:0 0 6px}
+.pop .kv dt{color:var(--dim)}
+.pop .kv dd{margin:0;text-align:left;font-weight:500}
+.pop .logs{font-size:12.5px}
+.pop .logs div{border-top:1px solid var(--line);padding:7px 0;color:var(--dim)}
+.pop .logs div:first-child{border-top:0}
+.pop .logs b{color:var(--ink);font-weight:600}
 </style>
 </head>
 <body>
@@ -124,6 +166,22 @@ a.flow{color:var(--accent);text-decoration:underline;cursor:pointer;font-weight:
     <div id="rpt"></div>
   </div>
 
+  <!-- 卡關總覽（只在嵌入模式用；非嵌入時啟動程式會把整塊移除） -->
+  <div class="card hide" id="ovCard">
+    <h2>卡關總覽（全門市，唯讀）</h2>
+    <div class="ovnums" id="ovNums"></div>
+    <div class="msg" id="ovMsg"></div>
+    <div class="btns"><button class="line" id="ovRefresh">重新整理</button></div>
+    <h3>逾期未簽收</h3>
+    <div id="ovOverdue"><div class="none">載入中…</div></div>
+    <h3>各門市卡關</h3>
+    <div id="ovStuck"></div>
+    <h3>今日動態</h3>
+    <div id="ovFeed"></div>
+    <p class="note">點任何一列可看這張單的唯讀明細。逾期天數是後端算的，這裡不另外計算。</p>
+  </div>
+  <div class="msg" id="embErr"></div>
+
   <!-- 矩陣金額的彈出視窗 -->
   <div class="pop hide" id="pop"><div class="box" id="popBox"></div></div>
 
@@ -145,14 +203,71 @@ a.flow{color:var(--accent);text-decoration:underline;cursor:pointer;font-weight:
 <script>
 'use strict';
 const API = 'https://script.google.com/macros/s/AKfycbxRqci1Cnu92TKoAfYIpDxDfxjGF3_ENrjQL1yurnkxOwZz9MyM9Eu9grIcdeKjbs8-/exec';
-let PIN = '', NODES = [], RPT = null;
+let PIN = '', NODES = [], RPT = null, REASONS = [];
+
+// ── 嵌入模式（spec transfer-fin §4）──────────────────────
+// 網址帶 ?embed=dzy 且真的在 iframe 裡才算；否則下面所有嵌入程式都不會動，行為與舊網址完全一樣。
+const EMBED = (() => {
+  try { return new URLSearchParams(location.search).get('embed') === 'dzy' && window.parent !== window; }
+  catch (_) { return false; }
+})();
+// 本機開發才看 ?hostport=（本機試用環境換埠用）；正式網域永遠寫死管理系統網址
+const PARENT_ORIGIN = (location.hostname === 'localhost' || location.hostname === '127.0.0.1')
+  ? 'http://' + location.hostname + ':' + ((/^\d{2,5}$/.test(new URLSearchParams(location.search).get('hostport') || '') && new URLSearchParams(location.search).get('hostport')) || '8777')
+  : 'https://dzy.mozhuting.com';
+const PENDING = {};       // id → { resolve, timer }
+let CALL_SEQ = 0;
 
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s == null ? '' : s).replace(/[&<>"]/g, (c) =>
   ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 const n2 = (v) => v === '' || v === null || v === undefined ? '' : Number(v).toLocaleString('zh-TW');
 
+/**
+ * 母頁（管理系統 modules/transfer-fin/bridge.js toPageResult）已還原成原本 fetch 拿到的後端 JSON：
+ * 成功 {ok:true, data}、失敗 {ok:false, error, code?}。這裡只做形狀防呆，既有呼叫端完全不用改。
+ */
+function restoreResult(r) {
+  if (!r || typeof r !== 'object') return { ok: false, error: '伺服器回應格式錯誤' };
+  if (r.ok === true) return { ok: true, data: r.data };
+  const out = { ok: false, error: String(r.error || '請求失敗') };
+  if (r.code) out.code = r.code;
+  // 嵌入時會計沒有輸入任何密碼：密碼錯／被鎖是後台設定或舊網址被人亂試造成的，講她看得懂的話
+  if (r.code === 'PIN_WRONG') out.error = '調撥系統的會計密碼設定對不上，請聯絡 Eason。';
+  if (r.code === 'PIN_LOCKED') out.error = '調撥系統的會計密碼被連續輸錯，暫時鎖住約 10 分鐘，請稍後按「重試」；一直這樣請聯絡 Eason。';
+  return out;
+}
+function embedPost(action, payload) {
+  return new Promise((resolve) => {
+    const id = 'tr' + (++CALL_SEQ) + '_' + Math.random().toString(36).slice(2, 8);
+    const body = Object.assign({}, payload);
+    delete body.pin_master;   // 會計密碼不經頁面，母頁／mini 代帶
+    const timer = setTimeout(() => {
+      delete PENDING[id];
+      resolve({ ok: false, error: '等太久沒有回應，請稍後再試。' });
+    }, 70000);
+    PENDING[id] = { resolve: resolve, timer: timer };
+    window.parent.postMessage({ type: 'dzy-transfer-call', v: 1, id: id, action: action, payload: body },
+      PARENT_ORIGIN);
+  });
+}
+window.addEventListener('message', (e) => {
+  if (!EMBED || e.origin !== PARENT_ORIGIN || e.source !== window.parent) return;
+  const m = e.data;
+  if (!m || typeof m !== 'object' || m.v !== 1) return;
+  if (m.type === 'dzy-transfer-result') {
+    const w = PENDING[m.id];
+    if (!w) return;
+    clearTimeout(w.timer);
+    delete PENDING[m.id];
+    w.resolve(restoreResult(m.result));
+  } else if (m.type === 'dzy-transfer-nav') {
+    showCard(m.p);
+  }
+});
+
 async function post(action, payload) {
+  if (EMBED) return embedPost(action, payload);
   const body = JSON.stringify({ action, payload });
   if (window.__LOCAL_BACKEND__) return JSON.parse(window.__LOCAL_BACKEND__(body));
   const r = await fetch(API, {
@@ -293,7 +408,7 @@ function showCell(from, to) {
   $('pop').classList.remove('hide');
   $('popClose').onclick = closePop;
 }
-function closePop() { $('pop').classList.add('hide'); }
+function closePop() { $('pop').classList.add('hide'); $('popBox').className = 'box'; }
 $('pop').onclick = (e) => { if (e.target.id === 'pop') closePop(); };   // 點外面也關
 document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closePop(); });
 
@@ -603,6 +718,155 @@ async function adm(payload, okText, done) {
   return res;
 }
 
+// ── 嵌入模式：切卡片 ──────────────────────────────────
+let CUR_CARD = 'report';
+function showCard(p) {
+  CUR_CARD = ({ report: 1, memory: 1, overview: 1 })[p] ? p : 'report';
+  $('rptCard').classList.toggle('hide', CUR_CARD !== 'report');
+  $('admCard').classList.toggle('hide', CUR_CARD !== 'memory');
+  $('ovCard').classList.toggle('hide', CUR_CARD !== 'overview');
+  if (!ADM) { $('rptCard').classList.add('hide'); $('admCard').classList.add('hide'); $('ovCard').classList.add('hide'); return; }   // 還沒解鎖
+  if (CUR_CARD === 'overview') loadOverview();
+}
+
+// ── 卡關總覽（從門市版 index.html 搬來，唯讀）──────────────
+const money = (n) => (Math.round(n * 100) / 100).toLocaleString('zh-TW');
+/**
+ * 三塊：逾期未簽收／各門市卡關／今日動態。資料全來自後端 adminOverview 一支 API——
+ * 前端不自己算，尤其逾期天數（當天到期不算逾期，後端與門市端同一條規則）。
+ */
+async function loadOverview() {
+  const msg = $('ovMsg');
+  msg.className = 'msg';
+  msg.textContent = '';
+  $('ovOverdue').innerHTML = '<div class="none">載入中…</div>';
+  $('ovStuck').innerHTML = ''; $('ovFeed').innerHTML = '';
+  let res;
+  try { res = await post('adminOverview', {}); }
+  catch (_) { res = { ok: false, error: '連不到後端，檢查一下網路。' }; }
+  if (!res.ok) {
+    msg.className = 'msg err';
+    msg.textContent = res.error || '讀不到總覽。';
+    $('ovOverdue').innerHTML = '';
+    return;
+  }
+  renderOverview(res.data);
+}
+
+function ovRow(x, tag) {
+  const late = x['逾期天數'] > 0
+    ? `<span class="pill" style="background:var(--danger)">${tag ? esc(tag) + '・' : ''}逾期 ${x['逾期天數']} 天</span>` : '';
+  return `<div class="ovrow" data-no="${esc(x['單號'])}">
+    <div class="l1"><span class="no">${esc(x['單號'])}</span>${late}</div>
+    <div class="l2"><span class="way">${esc(x['調出簡稱'])} → ${esc(x['調入簡稱'])}</span>
+      <span class="amt">$${money(x['應撥總額'] || 0)}</span></div></div>`;
+}
+
+function ovNodeBlock(n) {
+  const bits = [];
+  if (n['草稿未出貨'].length) bits.push(`開了還沒出貨 ${n['草稿未出貨'].length} 張`);
+  if (n['已出貨未簽收'].length) bits.push(`出了對方還沒簽收 ${n['已出貨未簽收'].length} 張`);
+  // 逾期張數是掛在「調入方」頭上的（＝該簽收卻還沒簽），跟上面兩項的角度不同
+  if (n['逾期張數']) bits.push(`<b style="color:var(--danger)">等這家簽收而逾期 ${n['逾期張數']} 張</b>`);
+  // 只欠簽收的門市也要列得出單，不然只剩一行字、點不進任何單據
+  const waiting = (n['等它簽收逾期'] || []).map((x) => ovRow(x, '待簽')).join('');
+  const rows = n['草稿未出貨'].concat(n['已出貨未簽收']).map((x) => ovRow(x)).join('');
+  return `<div class="ovnode"><div class="hd">${esc(n['簡稱'])}</div>
+    <div class="sub">${bits.join('・')}</div>${waiting}${rows}</div>`;
+}
+
+function ovFeedRow(f) {
+  const way = f['調出簡稱'] ? `${esc(f['調出簡稱'])} → ${esc(f['調入簡稱'])}｜` : '';
+  // 操作人存的是「店簡稱｜姓名」，店名前面 way 已經寫過，只留姓名
+  const raw = String(f['操作人'] || '');
+  const who = raw.indexOf('｜') >= 0 ? raw.split('｜').slice(1).join('｜') || raw : raw;
+  return `<div class="ovfeed" data-no="${esc(f['單號'])}">
+    <span class="t">${esc(String(f['時間'] || '').slice(11, 16))}</span>
+    <b>${esc(f['動作'])}</b> ${esc(f['單號'])}
+    <span class="t">${way}${esc(who)}</span></div>`;
+}
+
+function renderOverview(d) {
+  const t = d.totals || {};
+  $('ovNums').innerHTML = [
+    ['開了沒出貨', t['草稿未出貨'], false],
+    ['出了沒簽收', t['已出貨未簽收'], false],
+    ['逾期', t['逾期'], (t['逾期'] || 0) > 0],
+    ['今日異動', t['今日異動'], false]
+  ].map((x) => `<div class="${x[2] ? 'hot' : ''}"><b>${x[1] || 0}</b><span>${x[0]}</span></div>`).join('');
+
+  const ovd = d.overdue || [];
+  // ⚠️ 一律包箭頭函式：直接 .map(ovRow) 會把陣列 index 當第二個參數（tag）傳進去
+  $('ovOverdue').innerHTML = ovd.length ? ovd.map((x) => ovRow(x)).join('')
+    : '<div class="none">目前沒有逾期的單。</div>';
+
+  // 卡關看板只列真的有卡住的門市；逾期張數也算（只欠簽收的那家正是最該催的）
+  const stuck = (d.nodes || []).filter((n) =>
+    n['草稿未出貨'].length || n['已出貨未簽收'].length || n['逾期張數']);
+  $('ovStuck').innerHTML = stuck.length ? stuck.map((n) => ovNodeBlock(n)).join('')
+    : '<div class="none">十一個節點都沒有卡住的單。</div>';
+
+  const feed = d.feed || [];
+  const FEED_SHOW = 10;
+  if (!feed.length) {
+    $('ovFeed').innerHTML = '<div class="none">今天還沒有人動過任何單據。</div>';
+  } else {
+    const head = feed.slice(0, FEED_SHOW).map((f) => ovFeedRow(f)).join('');
+    const more = feed.length > FEED_SHOW
+      ? `<div class="btns"><button class="line" id="ovFeedMore">顯示其餘 ${feed.length - FEED_SHOW} 筆</button></div>`
+      : '';
+    $('ovFeed').innerHTML = head + more;
+    const btn = $('ovFeedMore');
+    if (btn) btn.onclick = () => { $('ovFeed').innerHTML = feed.map((f) => ovFeedRow(f)).join(''); };
+  }
+}
+
+/** 點總覽任何一列 → 用 #pop 彈窗顯示單據唯讀明細（getDoc）。沒有任何動作鈕。 */
+async function showDocPop(no) {
+  const res = await post('getDoc', { '單號': no, pin_master: PIN });
+  if (!res.ok) { show($('ovMsg'), 'err', res.error || '讀不到這張單。'); return; }
+  const d = res.data.doc, items = res.data.items || [], logs = res.data.logs || [];
+  const reasonName = (c) => { const r = REASONS.find((x) => x.code === c); return r ? r.name : (c || ''); };
+  const time = (v) => v ? String(v).slice(5, 16).replace('T', ' ') : '';
+  const kv = [
+    ['單號', d['單號']], ['狀態', d['狀態']],
+    ['調撥', `${nodeShort(d['調出方'])} → ${nodeShort(d['調入方'])}`],
+    ['調撥日期', d['調撥日期']], ['預計到貨', d['預計到貨日']],
+    ['打包人', d['打包人']], ['簽收人', d['簽收人']], ['備註', d['備註']]
+  ].filter((x) => x[1] !== '' && x[1] != null);
+  const rows = items.map((it) => {
+    const got = it['實收數量'];
+    const diff = got === '' || got === null || got === undefined ? '' : Math.round((Number(got) - Number(it['應撥數量'])) * 100) / 100;
+    return `<tr><td>${esc(it['品項名稱'])}</td><td>${esc(it['類別'] || '食材')}</td>
+      <td class="n">${n2(it['調撥單價'])}</td><td class="n">${n2(it['應撥數量'])}</td>
+      <td class="n">${got === '' || got == null ? '—' : n2(got)}</td>
+      <td class="n ${diff ? 'gap' : ''}">${diff === '' ? '—' : (diff > 0 ? '+' + diff : diff)}</td>
+      <td>${esc(diff ? reasonName(it['差異原因代碼']) : '')}</td></tr>`;
+  }).join('');
+  $('popBox').className = 'box wide';
+  $('popBox').innerHTML = `
+    <h4>單據明細（唯讀）</h4>
+    <dl class="kv">${kv.map((x) => `<dt>${esc(x[0])}</dt><dd>${esc(x[1])}</dd>`).join('')}</dl>
+    <h3 style="margin-top:12px">品項</h3>
+    <div class="scroll"><table>
+      <thead><tr><th>名稱</th><th>類別</th><th class="n">單價</th><th class="n">應撥</th><th class="n">實收</th><th class="n">差異</th><th>差異原因</th></tr></thead>
+      <tbody>${rows || '<tr><td colspan="7">沒有品項</td></tr>'}</tbody></table></div>
+    <h3>異動紀錄</h3>
+    <div class="logs">${logs.length ? logs.map((l) => `<div>${esc(time(l['時間']))}　<b>${esc(l['動作'])}</b>${l['欄位'] ? '　' + esc(l['欄位']) + '：' + esc(l['原值']) + ' → ' + esc(l['新值']) : ''}　${esc(l['操作人'])}</div>`).join('') : '<div>沒有紀錄</div>'}</div>
+    <div class="btns"><button id="popClose">關閉</button></div>`;
+  $('pop').classList.remove('hide');
+  $('popClose').onclick = closePop;
+}
+const nodeShort = (full) => {
+  const n = NODES.find((x) => x.name === full);
+  return n ? n.short : full;
+};
+$('ovCard').addEventListener('click', (e) => {
+  const row = e.target.closest('[data-no]');
+  if (row && row.dataset.no) showDocPop(row.dataset.no);
+});
+$('ovRefresh').onclick = () => loadOverview();
+
 // ── 啟動 ──────────────────────────────────────────────
 (async function boot() {
   const b = await post('bootstrap', {});
@@ -611,8 +875,31 @@ async function adm(payload, okText, done) {
     $('node').innerHTML = '<option value="">全部門市</option>' +
       NODES.map((n) => `<option value="${esc(n.name)}">${esc(n.short)}</option>`).join('');
     $('ym').value = String(b.data.today).slice(0, 7);
+    REASONS = b.data.reasons || [];
   }
 })();
+
+// ── 嵌入模式啟動 ─────────────────────────────────────
+// 非嵌入：卡關總覽整塊移除（#ovCard 不存在於頁面上）。
+// 嵌入：不問密碼，直接呼叫 adminData 進入解鎖後狀態（密碼由母頁／mini 代帶，PIN 維持空字串）。
+if (!EMBED) {
+  const ov = $('ovCard'); if (ov) ov.remove();
+  const ee = $('embErr'); if (ee) ee.remove();
+} else {
+  (async function embedStart() {
+    const res = await post('adminData', {});
+    if (!res.ok) {
+      show($('embErr'), 'err', res.error || '進不去調撥管理。');
+      const rb = document.createElement('button'); rb.textContent = '重試'; rb.style.marginLeft = '10px';
+      rb.onclick = () => { $('embErr').textContent = ''; $('embErr').className = 'msg'; embedStart(); };
+      $('embErr').appendChild(rb);
+      return;
+    }
+    paintAdmin(res.data);
+    showCard(CUR_CARD);
+  })();
+  window.parent.postMessage({ type: 'dzy-transfer-ready', v: 1 }, PARENT_ORIGIN);
+}
 </script>
 </body>
 </html>
