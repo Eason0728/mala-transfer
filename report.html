@@ -26,6 +26,7 @@ try { if (document.documentElement.classList.contains('emb') && /(?:^|[?&])ui=ne
 /* 管理系統新外觀（2026-11-16）：Apple 淺灰底＋Apple 藍；只在嵌入＋ui=new 生效 */
 html.emb.ui-new{--bg:#f5f5f7; --head:#fafafa; --line:#e5e5ea; --ink:#1d1d1f; --dim:#6e6e73; --accent:#0066cc; --accent-soft:rgba(0,102,204,.10); --danger:#d70015; --shadow:0 1px 2px rgba(0,0,0,.04)}
 html.emb.ui-new body{-webkit-font-smoothing:antialiased}
+@media (min-width:861px){html.emb.ui-new .wrap{max-width:none}}   /* 電腦版滿版（2026-11-16） */
 *{box-sizing:border-box}
 body{margin:0;background:var(--bg);color:var(--ink);padding:28px 20px 80px;
      font:15px/1.65 -apple-system,BlinkMacSystemFont,"PingFang TC","Noto Sans TC","Segoe UI",sans-serif}
