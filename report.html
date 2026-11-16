@@ -13,6 +13,8 @@
 <script>
 /* 嵌入管理系統（?embed=dzy 且在 iframe 內）時先打旗標，header／gate 一開始就不畫，避免閃一下 */
 try { if (new URLSearchParams(location.search).get('embed') === 'dzy' && window.parent !== window) document.documentElement.classList.add('emb'); } catch (e) {}
+/* 管理系統新外觀（2026-11-16）：嵌入且網址帶 ui=new 時換色票（CSS html.emb.ui-new） */
+try { if (document.documentElement.classList.contains('emb') && /(?:^|[?&])ui=new(?:&|#|$)/.test(location.search)) document.documentElement.classList.add('ui-new'); } catch (e) {}
 </script>
 <style>
 :root{
@@ -21,6 +23,9 @@ try { if (new URLSearchParams(location.search).get('embed') === 'dzy' && window.
   --accent:#3a72b5; --accent-soft:rgba(58,114,181,.10); --brand:#d2542f;
   --done:#4a9e78; --danger:#c9615f; --shadow:0 1px 2px rgba(30,45,65,.04),0 5px 16px rgba(30,45,65,.045);
 }
+/* 管理系統新外觀（2026-11-16）：Apple 淺灰底＋Apple 藍；只在嵌入＋ui=new 生效 */
+html.emb.ui-new{--bg:#f5f5f7; --head:#fafafa; --line:#e5e5ea; --ink:#1d1d1f; --dim:#6e6e73; --accent:#0071e3; --accent-soft:rgba(0,113,227,.10); --danger:#d70015; --shadow:0 1px 2px rgba(0,0,0,.04)}
+html.emb.ui-new body{-webkit-font-smoothing:antialiased}
 *{box-sizing:border-box}
 body{margin:0;background:var(--bg);color:var(--ink);padding:28px 20px 80px;
      font:15px/1.65 -apple-system,BlinkMacSystemFont,"PingFang TC","Noto Sans TC","Segoe UI",sans-serif}
