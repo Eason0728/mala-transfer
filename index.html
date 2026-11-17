@@ -139,13 +139,14 @@ select{background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/
 }
 .item .del:active{background:var(--line)}
 .item .nmwrap{position:relative;margin-bottom:10px;padding-right:34px}
-/* 類別三選一（食材／包材／雜貨）：大按鈕，店員戴手套也點得到。
-   三顆在 390px 寬還放得下；字級略縮一點避免換行 */
-.cats{display:flex;gap:6px}
-.cats button{flex:1;font:inherit;font-size:14px;padding:9px 0;border-radius:10px;
+/* 類別單選：大按鈕，店員戴手套也點得到。類別由會計自訂（2026-11-17，最多 8 個使用中），
+   一排固定 4 欄、超過自動換第二排，按鈕大小不變；字級略縮一點避免換行 */
+.cats{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:6px}
+.cats button{min-width:0;font:inherit;font-size:14px;padding:9px 2px;border-radius:10px;overflow-wrap:anywhere;
   border:1px solid var(--line);background:var(--panel);color:var(--dim);cursor:pointer}
 .cats button.on{border-color:var(--accent);color:var(--accent);background:var(--accent-soft);font-weight:700}
 .cats.bad button{border-color:var(--danger);background:rgba(214,69,69,.06)}   /* 沒選類別時整組標紅 */
+.catgone{font-size:12.5px;color:var(--danger);margin-top:6px}   /* 原本選的類別被會計停用了 */
 .sub{text-align:right;font-size:13px;color:var(--dim);margin-top:8px}
 .sub b{color:var(--ink);font-size:15px}
 .cands{
@@ -547,8 +548,15 @@ const K_LAST_NODE = 'mala_transfer_last_node';
 
 // NODES 是 [{name, short, code}]，全名進資料庫、短名給手機畫面用
 let NODES = [], MEM = [], REASONS = [], TODAY = '', editingNo = '';
-// 類別清單（與後端 ITEM_CATS 同一份語意）：加類別時這裡與 HTML 的三顆按鈕一起改
-const ITEM_CATS = ['食材', '包材', '雜貨'];
+// 類別清單由會計在管理系統自訂（2026-11-17）：一律照後端 bootstrap 的 cats（啟用中、照排序）畫按鈕。
+// 這裡的三類只是連不到後端時的離線預設；舊後端只有 itemCats（字串陣列）也接得住。
+let CATS = [{ code: 'C1', name: '食材' }, { code: 'C2', name: '包材' }, { code: 'C3', name: '雜貨' }];
+function setCatsFrom(data) {
+  if (data && Array.isArray(data.cats) && data.cats.length) CATS = data.cats.map((c) => ({ code: String(c.code), name: String(c.name) }));
+  else if (data && Array.isArray(data.itemCats) && data.itemCats.length) CATS = data.itemCats.map((n) => ({ code: '', name: String(n) }));
+}
+/** 找類別：代碼優先（會計改名後舊草稿也對得到），沒代碼才比名稱；停用或不存在回 null */
+const findCat = (code, name) => (code && CATS.find((c) => c.code && c.code === code)) || (name && CATS.find((c) => c.name === name)) || null;
 const shortOf = (name) => (NODES.find((n) => n.name === name) || {}).short || name;
 const brandOfNode = (name) => (NODES.find((n) => n.name === name) || {}).brand || '';
 const BRAND_KEY = { '墨竹亭': 'mozhu', '小辛辣': 'mala', '一悟燒肉': 'yiwu', '鼎兆元總部': 'hq' };
@@ -683,11 +691,8 @@ function addItem(v) {
     </div>
     <div class="f">
       <label>類別<span class="req">＊</span></label>
-      <div class="cats">
-        <button type="button" data-v="食材">食材</button>
-        <button type="button" data-v="包材">包材</button>
-        <button type="button" data-v="雜貨">雜貨</button>
-      </div>
+      <div class="cats"></div>
+      <div class="catgone" hidden></div>
     </div>
     <div class="two">
       <div class="f"><label>規格（選填）</label><input class="sp" placeholder="500g"></div>
@@ -705,21 +710,22 @@ function addItem(v) {
   q('.un').value = v.unit || ''; q('.pr').value = v.price != null ? v.price : '';
   q('.qt').value = v.qty != null ? v.qty : '';
 
-  // 類別二選一，**預設不選**（Eason 2026-07-31：一定要自己點，不要幫他猜食材）。
-  // 帶回舊草稿時才沿用存過的值；後端 normCat_ 也擋空白，前後端同一條規則。
-  const setCat = (val) => {
-    d.dataset.cat = val || '';
-    d.querySelectorAll('.cats button').forEach((b) => b.classList.toggle('on', b.dataset.v === val));
+  // 類別單選，**預設不選**（Eason 2026-07-31：一定要自己點，不要幫他猜食材）。
+  // 帶回舊草稿時才沿用存過的值；後端 resolveCat_ 也擋空白，前後端同一條規則。
+  d._setCat = (c) => {
+    d.dataset.cat = c ? c.name : '';
+    d.dataset.code = c ? c.code : '';
+    d.querySelectorAll('.cats button').forEach((b) => b.classList.toggle('on', !!c && b.dataset.v === c.name));
+    if (c) q('.catgone').hidden = true;
   };
-  setCat(ITEM_CATS.indexOf(v.cat) >= 0 ? v.cat : '');
-  d.querySelectorAll('.cats button').forEach((b) => {
-    b.onclick = () => {
-      setCat(b.dataset.v);
-      d.querySelector('.cats').classList.remove('bad');
-      if (!d.querySelector('.bad')) d.querySelector('.why').className = 'why';
-      saveLocal();
-    };
-  });
+  paintCats(d);
+  const hit = findCat(v.catCode, v.cat);
+  d._setCat(hit);
+  // 原本選的類別被會計停用了：維持不選、講清楚要重選（不偷偷換成別的）
+  if (!hit && v.cat) {
+    q('.catgone').textContent = '原本選的「' + v.cat + '」已停用，請重選類別。';
+    q('.catgone').hidden = false;
+  }
 
   q('.del').onclick = () => { d.remove(); ensureOne(); calc(); saveLocal(); };
   d.querySelectorAll('input').forEach((i) => i.addEventListener('input', () => {
@@ -745,8 +751,8 @@ function addItem(v) {
         const h = hits[i];
         q('.nm').value = h.name; q('.sp').value = h.spec || ''; q('.un').value = h.unit || '';
         if (!q('.pr').value) q('.pr').value = h.price != null ? h.price : '';
-        // 記憶有存類別才帶出來；舊記憶沒有類別就維持不選，不要幫他猜食材
-        setCat(ITEM_CATS.indexOf(h.cat) >= 0 ? h.cat : '');
+        // 記憶有存類別才帶出來；舊記憶沒有類別、或那個類別已停用，就維持不選，不要幫他猜
+        d._setCat(findCat(h.catCode, h.cat));
         hide(); calc(); saveLocal();
       };
     });
@@ -758,6 +764,26 @@ function addItem(v) {
   calc();
 }
 
+/** 畫一張品項卡的類別按鈕（照 CATS）；重畫時保留已選的那顆 */
+function paintCats(d) {
+  const box = d.querySelector('.cats');
+  box.innerHTML = CATS.map((c) => `<button type="button" data-v="${esc(c.name)}" data-code="${esc(c.code)}">${esc(c.name)}</button>`).join('');
+  box.querySelectorAll('button').forEach((b) => {
+    b.onclick = () => {
+      d._setCat(findCat(b.dataset.code, b.dataset.v));
+      box.classList.remove('bad');
+      if (!d.querySelector('.bad')) d.querySelector('.why').className = 'why';
+      saveLocal();
+    };
+  });
+  const prevName = d.dataset.cat, prevCode = d.dataset.code;
+  if (d._setCat && (prevCode || prevName)) {
+    const c = findCat(prevCode, prevName);
+    d._setCat(c);
+    if (!c) { const g = d.querySelector('.catgone'); g.textContent = '原本選的「' + prevName + '」已停用，請重選類別。'; g.hidden = false; }
+  }
+}
+
 function ensureOne() { if (!document.querySelector('.item')) addItem(); }
 
 function readItems() {
@@ -767,7 +793,7 @@ function readItems() {
     unit: d.querySelector('.un').value.trim(),
     price: d.querySelector('.pr').value,
     qty: d.querySelector('.qt').value,
-    cat: d.dataset.cat || ''
+    cat: d.dataset.cat || '', catCode: d.dataset.code || ''
   }));
 }
 
@@ -1008,7 +1034,7 @@ async function save() {
       '打包人': f.packer.trim(), '備註': f.note.trim()
     },
     items: f.items.map((i) => ({
-      '品項名稱': i.name, '規格': i.spec, '單位': i.unit, '類別': i.cat,
+      '品項名稱': i.name, '規格': i.spec, '單位': i.unit, '類別': i.cat, '類別代碼': i.catCode || '',
       '調撥單價': i.price === '' ? '' : Number(i.price),
       '應撥數量': i.qty === '' ? '' : Number(i.qty)
     })),
@@ -1048,7 +1074,7 @@ async function reopen(no) {
     packer: d['打包人'], note: d['備註'],
     items: res.data.items.map((i) => ({
       name: i['品項名稱'], spec: i['規格'], unit: i['單位'], price: i['調撥單價'], qty: i['應撥數量'],
-      cat: i['類別']
+      cat: i['類別'], catCode: i['類別代碼'] || ''
     }))
   });
   saveLocal();
@@ -1122,7 +1148,7 @@ function renderDoc() {
         <input class="rx" data-idx="${idx}" maxlength="20" placeholder="原因限 20 字，例：司機少搬一箱"></div>`;
     }
     return `<div class="line">
-      <div class="t"><b>${esc(it['品項名稱'])}</b><i>${esc([it['類別'] || '食材', it['規格']].filter(Boolean).join(' · '))}</i><em>$${Number(it['調撥單價']).toLocaleString('zh-TW')} · 小計 ${Number(it['小計']).toLocaleString('zh-TW')}</em></div>
+      <div class="t"><b>${esc(it['品項名稱'])}</b><i>${esc([it['類別'] || (CATS[0] || {}).name || '食材', it['規格']].filter(Boolean).join(' · '))}</i><em>$${Number(it['調撥單價']).toLocaleString('zh-TW')} · 小計 ${Number(it['小計']).toLocaleString('zh-TW')}</em></div>
       ${body}${edit}</div>`;
   }).join('');
 
@@ -1294,7 +1320,13 @@ async function act(kind, extra) {
 async function refreshMemory() {
   try {
     const b = await post('bootstrap', {});
-    if (b.ok) { MEM = b.data.items || []; REASONS = b.data.reasons || []; }
+    if (b.ok) {
+      MEM = b.data.items || []; REASONS = b.data.reasons || [];
+      const before = JSON.stringify(CATS);
+      setCatsFrom(b.data);
+      // 會計剛好改了類別：已經畫好的品項卡重畫按鈕（選過的照代碼保留；被停用的變成沒選，送出時會擋）
+      if (JSON.stringify(CATS) !== before) document.querySelectorAll('.item').forEach(paintCats);
+    }
   } catch (_) { /* 沒網路就沿用舊的記憶 */ }
 }
 
@@ -1625,6 +1657,7 @@ $('cpBtn').onclick = async () => {
   try { b = await post('bootstrap', {}); } catch (_) { b = null; }
   if (b && b.ok) {
     NODES = b.data.nodes; MEM = b.data.items || []; REASONS = b.data.reasons || []; TODAY = b.data.today;
+    setCatsFrom(b.data);
   }
   else {
     // 離線時至少讓畫面撐得住；正確清單一定來自後端
