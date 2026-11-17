@@ -131,6 +131,19 @@ a.flow{color:var(--accent);text-decoration:underline;cursor:pointer;font-weight:
 .pop .logs{font-size:12.5px}
 .pop .logs div{border-top:1px solid var(--line);padding:7px 0;color:var(--dim)}
 .pop .logs div:first-child{border-top:0}
+/* 品項類別設定（2026-11-17）：一列一類，手機上名稱欄可縮、按鈕換行不擠壓名稱 */
+.cats{display:grid;gap:8px;margin-top:12px}
+.catrow{display:grid;grid-template-columns:34px minmax(0,1fr) auto;gap:8px 10px;align-items:center;border:1px solid var(--line);border-radius:12px;padding:10px 12px;background:var(--panel)}
+.catrow.off{background:var(--bg)}
+.catrow .code{font-size:12px;color:var(--dim);font-variant-numeric:tabular-nums}
+.catrow input{width:100%;min-width:0}
+.catrow .st{font-size:12px;font-weight:700;border-radius:999px;padding:3px 10px;white-space:nowrap;background:rgba(46,168,106,.12);color:var(--done)}
+.catrow.off .st{background:var(--head);color:var(--dim)}
+.catrow .ops{grid-column:2 / -1;display:flex;gap:6px;flex-wrap:wrap}
+@media (min-width:700px){.catrow{grid-template-columns:34px minmax(0,1fr) auto auto}.catrow .ops{grid-column:auto;order:3}.catrow .st{order:4}}
+.catnew{display:flex;gap:8px;margin-top:12px;flex-wrap:wrap}
+.catnew input{flex:1;min-width:160px}
+.catlog{margin-top:12px;font-size:12.5px;color:var(--dim);display:grid;gap:3px;font-variant-numeric:tabular-nums}
 .pop .logs b{color:var(--ink);font-weight:600}
 </style>
 </head>
@@ -203,6 +216,22 @@ a.flow{color:var(--accent);text-decoration:underline;cursor:pointer;font-weight:
     <p class="note">全部門市共用同一份清單，任何一店開單都會用到、也會更新它。
     名稱／規格／單位可以直接改，改完按該列的「儲存」；刪掉只是不再自動帶出來，已經開過的單不受影響。</p>
     <div class="msg" id="amsg"></div>
+  </div>
+
+  <!-- 品項類別（2026-11-17，會計自訂；嵌入時由母頁導覽「類別設定」切過來） -->
+  <div class="card hide" id="catCard">
+    <h2>品項類別</h2>
+    <p class="note" style="margin-top:0">門市開單時從這裡的「使用中」類別選一個。改名會連舊單、月報一起變；
+    停用後開單看不到，舊單與月報照常顯示。類別不能刪除。</p>
+    <div class="cats" id="catList"></div>
+    <div class="catnew">
+      <input id="catNewName" maxlength="6" placeholder="新類別名稱（最多 6 個字）" autocomplete="off">
+      <button id="catAddBtn">新增</button>
+    </div>
+    <p class="note" id="catFoot"></p>
+    <div class="msg" id="cmsg"></div>
+    <h3>最近異動</h3>
+    <div class="catlog" id="catLog"></div>
   </div>
 </div>
 
@@ -292,6 +321,7 @@ $('unlock').onclick = async () => {
   $('gate').classList.add('hide');
   $('rptCard').classList.remove('hide');
   $('admCard').classList.remove('hide');
+  $('catCard').classList.remove('hide');
   paintAdmin(res.data);
 };
 $('pin').addEventListener('keydown', (e) => { if (e.key === 'Enter') $('unlock').click(); });
@@ -398,13 +428,14 @@ function showCell(from, to) {
   // 這樣以後加第四類（雜貨就是 2026-07-31 這樣加的）前端一行都不用改
   const cats = hit.cats || null;
   const names = RPT.itemCats || (cats ? Object.keys(cats) : []);
+  const off = RPT.itemCatsOff || [];   // 已停用但這個月有金額的類別，標出來免得會計以為是新類別
   const sum = cats ? names.reduce((a, c) => a + (cats[c] || 0), 0) : 0;
   const other = cats ? Math.round((hit.amount - sum) * 100) / 100 : 0;
   $('popBox').innerHTML = `
     <h4>${esc(nameOf(from))} → ${esc(nameOf(to))}</h4>
     <div class="sub">${esc(RPT.ym)}　${hit.docs} 張單</div>
     ${cats ? `<dl>
-      ${names.map((c) => `<dt>${esc(c)}</dt><dd>${n2(cats[c] || 0)}</dd>`).join('')}
+      ${names.map((c) => `<dt>${esc(c)}${off.indexOf(c) >= 0 ? '（已停用）' : ''}</dt><dd>${n2(cats[c] || 0)}</dd>`).join('')}
       ${other ? `<dt>未分類</dt><dd>${n2(other)}</dd>` : ''}
       <div class="ln"></div>
       <dt>合計</dt><dd>${n2(hit.amount)}</dd>
@@ -646,7 +677,84 @@ let ADM = null;
 function paintAdmin(data) {
   ADM = data;
   paintMem();
+  paintCats();
 }
+
+/**
+ * 品項類別（2026-11-17）：改名／停用啟用／上下移／新增。全部走後端 adminUpdate（cat*），
+ * 成功後重抓 adminData 重畫——畫面永遠是後端的真實狀態，被擋下來的輸入框也會還原。
+ * 舊後端沒有 cats：整張卡顯示「後端還沒更新」，不畫假的三類。
+ */
+function paintCats() {
+  const cats = ADM && ADM.cats;
+  if (!Array.isArray(cats)) {
+    $('catList').innerHTML = '<div class="none">調撥後端還沒更新到有類別設定的版本。</div>';
+    $('catAddBtn').disabled = true;
+    return;
+  }
+  const lim = ADM.catLimits || { on: 8, name: 6 };
+  const onN = cats.filter((c) => c.on).length;
+  const full = onN >= lim.on;
+  $('catList').innerHTML = cats.map((c, k) => `<div class="catrow${c.on ? '' : ' off'}">
+      <span class="code">${esc(c.code)}</span>
+      <input class="cat-name" data-k="${k}" maxlength="${lim.name}" value="${esc(c.name)}" aria-label="${esc(c.code)} 類別名稱">
+      <span class="st">${c.on ? '使用中' : '已停用'}</span>
+      <div class="ops">
+        <button class="sm line cat-save" data-k="${k}">改名</button>
+        <button class="sm line cat-tog" data-k="${k}">${c.on ? '停用' : '啟用'}</button>
+        <button class="sm line cat-up" data-k="${k}" ${k === 0 ? 'disabled' : ''} aria-label="往上移">↑</button>
+        <button class="sm line cat-dn" data-k="${k}" ${k === cats.length - 1 ? 'disabled' : ''} aria-label="往下移">↓</button>
+      </div>
+    </div>`).join('');
+  $('catFoot').textContent = `使用中 ${onN}／上限 ${lim.on}。名稱最多 ${lim.name} 個字，不能跟其他類別同名（停用的也算）。`;
+  const closed = lim.addOpen === false;   // 後端「新增類別」開關關著（等損益對應定案）
+  $('catAddBtn').disabled = full || closed;
+  $('catNewName').disabled = closed;
+  $('catNewName').placeholder = closed ? '新增類別暫時關閉（新類別怎麼算進損益還沒定案）'
+    : full ? `使用中已滿 ${lim.on} 個，先停用一個才能新增` : `新類別名稱（最多 ${lim.name} 個字）`;
+  const log = ADM.catLog || [];
+  $('catLog').innerHTML = log.length
+    ? log.map((l) => `<span>${esc(String(l.at).slice(5, 16).replace('T', ' '))}｜${esc(l.who)}｜${esc(l.action)}｜${esc(l.text)}</span>`).join('')
+    : '<span>還沒有異動。</span>';
+
+  const at = (b) => cats[Number(b.dataset.k)];
+  const lock = (b, text) => { const old = b.textContent; b.disabled = true; b.textContent = text; return () => { b.disabled = false; b.textContent = old; }; };
+  $('catList').querySelectorAll('.cat-save').forEach((b) => {
+    b.onclick = () => {
+      const c = at(b), inp = $('catList').querySelector(`.cat-name[data-k="${b.dataset.k}"]`);
+      const nm = inp.value.trim();
+      if (!nm) { inp.value = c.name; return show($('cmsg'), 'err', '類別名稱不能空白。'); }
+      if (nm === c.name) return show($('cmsg'), 'ok', '名稱沒有改。');
+      adm({ op: 'catEdit', code: c.code, name: nm }, `已改名為「${nm}」，舊單與月報會一起顯示新名稱`, lock(b, '儲存中…'), $('cmsg'))
+        .then((res) => { if (!(res && res.ok)) inp.value = c.name; });   // 被擋：還原成後端真實值
+    };
+  });
+  $('catList').querySelectorAll('.cat-tog').forEach((b) => {
+    b.onclick = () => {
+      const c = at(b);
+      adm({ op: 'catToggle', code: c.code, on: !c.on },
+        c.on ? `已停用「${c.name}」，門市開單看不到了，舊單照常` : `已啟用「${c.name}」`, lock(b, c.on ? '停用中…' : '啟用中…'), $('cmsg'));
+    };
+  });
+  const move = (b, dir) => {
+    const k = Number(b.dataset.k), codes = cats.map((c) => c.code);
+    const j = k + dir;
+    if (j < 0 || j >= codes.length) return;
+    const t = codes[k]; codes[k] = codes[j]; codes[j] = t;
+    adm({ op: 'catOrder', codes: codes }, '已調整順序，開單按鈕與月報照這個順序', lock(b, '…'), $('cmsg'));
+  };
+  $('catList').querySelectorAll('.cat-up').forEach((b) => { b.onclick = () => move(b, -1); });
+  $('catList').querySelectorAll('.cat-dn').forEach((b) => { b.onclick = () => move(b, 1); });
+}
+$('catAddBtn').onclick = () => {
+  const nm = $('catNewName').value.trim();
+  if (!nm) return show($('cmsg'), 'err', '請先輸入新類別的名稱。');
+  const b = $('catAddBtn'), old = b.textContent;
+  b.disabled = true; b.textContent = '新增中…';
+  adm({ op: 'catAdd', name: nm }, `已新增「${nm}」，門市重新整理開單頁就看得到`, () => { b.textContent = old; }, $('cmsg'))
+    .then((res) => { if (res && res.ok) $('catNewName').value = ''; if (ADM) paintCats(); });
+};
+$('catNewName').addEventListener('keydown', (e) => { if (e.key === 'Enter') $('catAddBtn').click(); });
 
 function paintMem() {
   const list = ADM.items;   // 共用一份，沒有品牌可篩
@@ -706,32 +814,34 @@ function paintMem() {
 
 // bindAdmin 隨差異原因清單一起移除（2026-07-31）
 
-/** done：成功或失敗都會呼叫（用來解鎖按鈕），別放只有成功才該做的事 */
-async function adm(payload, okText, done) {
+/** done：成功或失敗都會呼叫（用來解鎖按鈕），別放只有成功才該做的事；msgEl＝訊息顯示在哪（預設品項記憶那格） */
+async function adm(payload, okText, done, msgEl) {
+  const box = msgEl || $('amsg');
   let res;
   try {
     res = await post('adminUpdate', Object.assign({ pin_master: PIN }, payload));
   } catch (err) {
     if (done) done();
-    show($('amsg'), 'err', '送不出去，可能是沒有網路，等一下再按一次。');
+    show(box, 'err', '送不出去，可能是沒有網路，等一下再按一次。');
     return { ok: false };
   }
   if (done) done();
-  if (!res.ok) { show($('amsg'), 'err', res.error); return res; }
+  if (!res.ok) { show(box, 'err', res.error); return res; }
   const d = await post('adminData', { pin_master: PIN });
   if (d.ok) paintAdmin(d.data);
-  show($('amsg'), 'ok', okText + (res.data && res.data.moved ? `（搬了 ${res.data.moved} 筆明細）` : ''));
+  show(box, 'ok', okText + (res.data && res.data.moved ? `（搬了 ${res.data.moved} 筆明細）` : ''));
   return res;
 }
 
 // ── 嵌入模式：切卡片 ──────────────────────────────────
 let CUR_CARD = 'report';
 function showCard(p) {
-  CUR_CARD = ({ report: 1, memory: 1, overview: 1 })[p] ? p : 'report';
+  CUR_CARD = ({ report: 1, memory: 1, overview: 1, cats: 1 })[p] ? p : 'report';
   $('rptCard').classList.toggle('hide', CUR_CARD !== 'report');
   $('admCard').classList.toggle('hide', CUR_CARD !== 'memory');
   $('ovCard').classList.toggle('hide', CUR_CARD !== 'overview');
-  if (!ADM) { $('rptCard').classList.add('hide'); $('admCard').classList.add('hide'); $('ovCard').classList.add('hide'); return; }   // 還沒解鎖
+  $('catCard').classList.toggle('hide', CUR_CARD !== 'cats');
+  if (!ADM) { ['rptCard', 'admCard', 'ovCard', 'catCard'].forEach((id) => $(id).classList.add('hide')); return; }   // 還沒解鎖
   if (CUR_CARD === 'overview') loadOverview();
 }
 
