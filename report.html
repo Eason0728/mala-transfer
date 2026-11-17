@@ -143,6 +143,9 @@ a.flow{color:var(--accent);text-decoration:underline;cursor:pointer;font-weight:
 @media (min-width:700px){.catrow{grid-template-columns:34px minmax(0,1fr) auto auto}.catrow .ops{grid-column:auto;order:3}.catrow .st{order:4}}
 .catnew{display:flex;gap:8px;margin-top:12px;flex-wrap:wrap}
 .catnew input{flex:1;min-width:160px}
+.catrow .pnl{font-size:12.5px;color:var(--dim);display:inline-flex;align-items:center;gap:6px;white-space:nowrap}
+.catrow .pnl select{padding:4px 8px;font-size:13px;width:auto}
+.catnew select{width:auto;min-width:150px}
 .catlog{margin-top:12px;font-size:12.5px;color:var(--dim);display:grid;gap:3px;font-variant-numeric:tabular-nums}
 .pop .logs b{color:var(--ink);font-weight:600}
 </style>
@@ -222,10 +225,12 @@ a.flow{color:var(--accent);text-decoration:underline;cursor:pointer;font-weight:
   <div class="card hide" id="catCard">
     <h2>品項類別</h2>
     <p class="note" style="margin-top:0">門市開單時從這裡的「使用中」類別選一個。改名會連舊單、月報一起變；
-    停用後開單看不到，舊單與月報照常顯示。類別不能刪除。</p>
+    停用後開單看不到，舊單與月報照常顯示。類別不能刪除。<br>
+    <b>損益算成</b>：損益系統只分食材／包材／雜貨，每個類別要歸到其中一類，金額才會算進損益（原本三類固定歸自己）。</p>
     <div class="cats" id="catList"></div>
     <div class="catnew">
       <input id="catNewName" maxlength="6" placeholder="新類別名稱（最多 6 個字）" autocomplete="off">
+      <select id="catNewPnl" aria-label="新類別在損益算成哪一類"></select>
       <button id="catAddBtn">新增</button>
     </div>
     <p class="note" id="catFoot"></p>
@@ -695,23 +700,28 @@ function paintCats() {
   const lim = ADM.catLimits || { on: 8, name: 6 };
   const onN = cats.filter((c) => c.on).length;
   const full = onN >= lim.on;
+  const groups = lim.pnlGroups || ['食材', '包材', '雜貨'];
+  const keepPnl = $('catNewPnl').value;
+  $('catNewPnl').innerHTML = '<option value="">損益算成…</option>' + groups.map((g) => `<option value="${esc(g)}">${esc(g)}</option>`).join('');
+  if (groups.indexOf(keepPnl) >= 0) $('catNewPnl').value = keepPnl;
   $('catList').innerHTML = cats.map((c, k) => `<div class="catrow${c.on ? '' : ' off'}">
       <span class="code">${esc(c.code)}</span>
       <input class="cat-name" data-k="${k}" maxlength="${lim.name}" value="${esc(c.name)}" aria-label="${esc(c.code)} 類別名稱">
       <span class="st">${c.on ? '使用中' : '已停用'}</span>
       <div class="ops">
-        <button class="sm line cat-save" data-k="${k}">改名</button>
+        <span class="pnl">損益算成 ${c.pnlFixed
+          ? `<b>${esc(c.pnl)}</b>`
+          : `<select class="cat-pnl" data-k="${k}" aria-label="${esc(c.code)} 損益算成">${groups.map((g) => `<option value="${esc(g)}"${g === c.pnl ? ' selected' : ''}>${esc(g)}</option>`).join('')}</select>`}</span>
+        <button class="sm line cat-save" data-k="${k}">儲存</button>
         <button class="sm line cat-tog" data-k="${k}">${c.on ? '停用' : '啟用'}</button>
         <button class="sm line cat-up" data-k="${k}" ${k === 0 ? 'disabled' : ''} aria-label="往上移">↑</button>
         <button class="sm line cat-dn" data-k="${k}" ${k === cats.length - 1 ? 'disabled' : ''} aria-label="往下移">↓</button>
       </div>
     </div>`).join('');
   $('catFoot').textContent = `使用中 ${onN}／上限 ${lim.on}。名稱最多 ${lim.name} 個字，不能跟其他類別同名（停用的也算）。`;
-  const closed = lim.addOpen === false;   // 後端「新增類別」開關關著（等損益對應定案）
-  $('catAddBtn').disabled = full || closed;
-  $('catNewName').disabled = closed;
-  $('catNewName').placeholder = closed ? '新增類別暫時關閉（新類別怎麼算進損益還沒定案）'
-    : full ? `使用中已滿 ${lim.on} 個，先停用一個才能新增` : `新類別名稱（最多 ${lim.name} 個字）`;
+  $('catAddBtn').disabled = full;
+  $('catNewPnl').disabled = full;
+  $('catNewName').placeholder = full ? `使用中已滿 ${lim.on} 個，先停用一個才能新增` : `新類別名稱（最多 ${lim.name} 個字）`;
   const log = ADM.catLog || [];
   $('catLog').innerHTML = log.length
     ? log.map((l) => `<span>${esc(String(l.at).slice(5, 16).replace('T', ' '))}｜${esc(l.who)}｜${esc(l.action)}｜${esc(l.text)}</span>`).join('')
@@ -722,11 +732,18 @@ function paintCats() {
   $('catList').querySelectorAll('.cat-save').forEach((b) => {
     b.onclick = () => {
       const c = at(b), inp = $('catList').querySelector(`.cat-name[data-k="${b.dataset.k}"]`);
-      const nm = inp.value.trim();
+      const sel = $('catList').querySelector(`.cat-pnl[data-k="${b.dataset.k}"]`);
+      const nm = inp.value.trim(), g = sel ? sel.value : c.pnl;
       if (!nm) { inp.value = c.name; return show($('cmsg'), 'err', '類別名稱不能空白。'); }
-      if (nm === c.name) return show($('cmsg'), 'ok', '名稱沒有改。');
-      adm({ op: 'catEdit', code: c.code, name: nm }, `已改名為「${nm}」，舊單與月報會一起顯示新名稱`, lock(b, '儲存中…'), $('cmsg'))
-        .then((res) => { if (!(res && res.ok)) inp.value = c.name; });   // 被擋：還原成後端真實值
+      if (nm === c.name && g === c.pnl) return show($('cmsg'), 'ok', '沒有改到任何東西。');
+      const said = [];
+      if (nm !== c.name) said.push(`已改名為「${nm}」，舊單與月報會一起顯示新名稱`);
+      if (g !== c.pnl) said.push(`損益改算成「${g}」，還沒定稿的月份重新帶入後會跟著變`);
+      const body = { op: 'catEdit', code: c.code };
+      if (nm !== c.name) body.name = nm;
+      if (g !== c.pnl) body.pnl = g;
+      adm(body, said.join('；'), lock(b, '儲存中…'), $('cmsg'))
+        .then((res) => { if (!(res && res.ok)) { inp.value = c.name; if (sel) sel.value = c.pnl; } });   // 被擋：還原成後端真實值
     };
   });
   $('catList').querySelectorAll('.cat-tog').forEach((b) => {
@@ -747,12 +764,13 @@ function paintCats() {
   $('catList').querySelectorAll('.cat-dn').forEach((b) => { b.onclick = () => move(b, 1); });
 }
 $('catAddBtn').onclick = () => {
-  const nm = $('catNewName').value.trim();
+  const nm = $('catNewName').value.trim(), g = $('catNewPnl').value;
   if (!nm) return show($('cmsg'), 'err', '請先輸入新類別的名稱。');
+  if (!g) return show($('cmsg'), 'err', '請選這個類別在損益算成食材、包材還是雜貨。');
   const b = $('catAddBtn'), old = b.textContent;
   b.disabled = true; b.textContent = '新增中…';
-  adm({ op: 'catAdd', name: nm }, `已新增「${nm}」，門市重新整理開單頁就看得到`, () => { b.textContent = old; }, $('cmsg'))
-    .then((res) => { if (res && res.ok) $('catNewName').value = ''; if (ADM) paintCats(); });
+  adm({ op: 'catAdd', name: nm, pnl: g }, `已新增「${nm}」（損益算成${g}），門市重新整理開單頁就看得到`, () => { b.textContent = old; }, $('cmsg'))
+    .then((res) => { if (res && res.ok) { $('catNewName').value = ''; $('catNewPnl').value = ''; } if (ADM) paintCats(); });
 };
 $('catNewName').addEventListener('keydown', (e) => { if (e.key === 'Enter') $('catAddBtn').click(); });
 
